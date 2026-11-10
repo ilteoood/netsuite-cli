@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { access, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -38,10 +39,13 @@ const writeCachedSession = (account, cookieHeader) => {
 	chmodSync(SESSION_CACHE_PATH, 0o600);
 };
 
-export const clearCache = ({ directory = CACHE_DIRECTORY } = {}) => {
-	if (!existsSync(directory)) return { removed: false, directory };
-	rmSync(directory, { recursive: true, force: true });
-	return { removed: true, directory };
+export const clearCache = async ({ directory = CACHE_DIRECTORY } = {}) => {
+	const removed = await access(directory).then(
+		() => true,
+		() => false,
+	);
+	await rm(directory, { recursive: true, force: true });
+	return { removed, directory };
 };
 
 export const probeSession = async (account, cookieHeader) => {

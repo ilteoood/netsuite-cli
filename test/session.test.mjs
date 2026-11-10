@@ -58,11 +58,11 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 	assert.deepEqual(JSON.parse(readFileSync(cachePath, "utf8")), { account: "1234567", cookieHeader: "JSESSIONID=new" });
 });
 
-test("clearCache removes the cache directory and reports whether it existed", () => {
+test("clearCache removes the cache directory and reports whether it existed", async () => {
 	const directory = join(mkdtempSync(join(tmpdir(), "netsuite-clear-")), "netsuite-cli");
 	mkdirSync(join(directory, "browser-profile"), { recursive: true });
 
-	assert.deepEqual(clearCache({ directory }), { removed: true, directory });
+	assert.deepEqual(await clearCache({ directory }), { removed: true, directory });
 	assert.equal(existsSync(directory), false);
-	assert.deepEqual(clearCache({ directory }), { removed: false, directory });
+	assert.deepEqual(await clearCache({ directory }), { removed: false, directory });
 });

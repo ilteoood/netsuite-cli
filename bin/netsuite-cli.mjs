@@ -14,6 +14,11 @@ const GLOBALS = {
 	"login-url": { type: "string", value: "<url>", description: "NetSuite login page the browser opens" },
 	"cookie-file": { type: "string", value: "<path>", description: "Read the session cookie from a file, no browser" },
 	json: { type: "boolean", default: false, description: "Print the result as JSON" },
+	clear: {
+		type: "boolean",
+		default: false,
+		description: "Remove the browser profile and the cached session, then exit; it takes no command",
+	},
 	help: { type: "boolean", default: false, description: "Show this help" },
 };
 
@@ -72,15 +77,7 @@ const commands = {
 	},
 };
 
-const CLEAR = {
-	type: "boolean",
-	default: false,
-	description: "Remove the browser profile and the cached session in ~/.cache/netsuite-cli, then exit",
-};
-
-const globalOptions = { ...GLOBALS, clear: CLEAR };
-
-const globalFlagNames = new Set(Object.keys(globalOptions).filter((name) => name !== "help"));
+const globalFlagNames = new Set(Object.keys(GLOBALS).filter((name) => name !== "help"));
 
 const resources = [...new Set(Object.keys(commands).map((key) => key.split(" ")[0]))];
 const verbsOf = (resource) =>
@@ -103,7 +100,7 @@ const splitGlobals = (argv) => {
 		const token = argv[index];
 		if (!token.startsWith("-")) return [argv.slice(0, index), argv.slice(index)];
 		const name = token.split("=")[0].slice(2);
-		if (globalOptions[name]?.type === "string" && !token.includes("=")) index += 1;
+		if (GLOBALS[name]?.type === "string" && !token.includes("=")) index += 1;
 	}
 	return [argv, []];
 };
@@ -140,9 +137,6 @@ export const usageText = (target) => {
 			"Global flags, before the resource:",
 			...usageOfFlags(GLOBALS),
 			"",
-			"Standalone flags:",
-			`  --clear  ${CLEAR.description}`,
-			"",
 			'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
 			"",
 		].join("\n");
@@ -177,7 +171,7 @@ export const usageText = (target) => {
 
 export const parseCommandLine = (argv) => {
 	const [globalArguments, rest] = splitGlobals(argv);
-	const { values } = parseStrict(globalArguments, parseOptions(globalOptions));
+	const { values } = parseStrict(globalArguments, parseOptions(GLOBALS));
 	const globals = {
 		loginUrl: values["login-url"] ?? null,
 		cookieFile: values["cookie-file"] ?? null,
@@ -351,7 +345,7 @@ export const main = async (argv) => {
 		const command = parseCommandLine(argv);
 		if (command.clear) {
 			const { clearCache } = await import("../src/session.mjs");
-			const { removed, directory } = clearCache();
+			const { removed, directory } = await clearCache();
 			const summary = removed
 				? `Removed ${directory} (browser profile and cached session)`
 				: `Nothing to remove in ${directory}`;
