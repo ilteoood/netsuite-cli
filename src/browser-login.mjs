@@ -1,15 +1,12 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { Launcher } from "chrome-launcher";
 import puppeteer from "puppeteer-core";
+import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
 const LOGIN_TIMEOUT_MS = 600000;
 const POLL_INTERVAL_MS = 2000;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-const browserProfileDirectory = () => join(homedir(), ".cache", "netsuite-cli", "browser-profile");
 
 const discoverBrowserExecutable = () => {
 	try {
@@ -87,7 +84,7 @@ export const loginForSessionCookie = async (options = {}) => {
 		);
 	}
 	const executable = findBrowserExecutable(options.browserPath ?? process.env.NETSUITE_BROWSER);
-	const profileDirectory = options.profileDirectory ?? browserProfileDirectory();
+	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	mkdirSync(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 	const validate = options.validate ?? (() => true);

@@ -1,14 +1,10 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { access, rm } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { CACHE_DIRECTORY, SESSION_CACHE_PATH } from "./cache.mjs";
 
 const USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36";
 const SESSION_PROBE_PATH = "/services/rest/query/v1/suiteql";
 const SESSION_PROBE_QUERY = "SELECT id FROM timesheet WHERE id = 1";
-const CACHE_DIRECTORY = join(homedir(), ".cache", "netsuite-cli");
-const SESSION_CACHE_PATH = join(CACHE_DIRECTORY, "session.json");
 
 export const netsuiteUrl = (account, path) => `https://${account}.app.netsuite.com${path}`;
 
@@ -37,15 +33,6 @@ const writeCachedSession = (account, cookieHeader) => {
 	mkdirSync(CACHE_DIRECTORY, { recursive: true });
 	writeFileSync(SESSION_CACHE_PATH, JSON.stringify({ account, cookieHeader }), { mode: 0o600 });
 	chmodSync(SESSION_CACHE_PATH, 0o600);
-};
-
-export const clearCache = async ({ directory = CACHE_DIRECTORY } = {}) => {
-	const removed = await access(directory).then(
-		() => true,
-		() => false,
-	);
-	await rm(directory, { recursive: true, force: true });
-	return { removed, directory };
 };
 
 export const probeSession = async (account, cookieHeader) => {
