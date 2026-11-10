@@ -14,7 +14,9 @@ export const clearCache = ({ directory = CACHE_DIRECTORY } = {}) => {
 	try {
 		rmSync(directory, { recursive: true, force: true });
 	} catch (error) {
-		throw new Error(`Could not remove ${directory}: ${error.message}. Close every Chrome window and try again.`, { cause: error });
+		throw new Error(`Could not remove ${directory}: ${error.message}. Close every Chrome window and try again.`, {
+			cause: error,
+		});
 	}
 	return { removed: true, directory };
 };
