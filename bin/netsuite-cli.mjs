@@ -14,6 +14,11 @@ const GLOBALS = {
 	"login-url": { type: "string", value: "<url>", description: "NetSuite login page the browser opens" },
 	"cookie-file": { type: "string", value: "<path>", description: "Read the session cookie from a file, no browser" },
 	json: { type: "boolean", default: false, description: "Print the result as JSON" },
+	clear: {
+		type: "boolean",
+		default: false,
+		description: "Remove the browser profile and the cached session, then exit; it takes no command",
+	},
 	help: { type: "boolean", default: false, description: "Show this help" },
 };
 
@@ -124,6 +129,7 @@ export const usageText = (target) => {
 	if (target === null) {
 		return [
 			"Usage: netsuite-cli [--login-url <url>] [--cookie-file <path>] [--json] <resource> <verb> [flags]",
+			"       netsuite-cli --clear",
 			"",
 			"Commands:",
 			...commandLines(Object.keys(commands)),
@@ -172,6 +178,10 @@ export const parseCommandLine = (argv) => {
 		json: values.json ?? false,
 	};
 	if (values.help) return { globals, resource: null, verb: null, flags: {}, help: "root" };
+	if (values.clear) {
+		if (rest.length > 0) throw new UsageError('"--clear" cannot be combined with a command');
+		return { globals, clear: true };
+	}
 	const [resource, ...afterResource] = rest;
 	if (resource === undefined) {
 		throw new UsageError('missing the resource; run "netsuite-cli --help" for the command list');
@@ -183,9 +193,15 @@ export const parseCommandLine = (argv) => {
 		const verb = verbsOf(resource).find((name) => name === afterResource[0]) ?? null;
 		return { globals, resource, verb, flags: {}, help: verb === null ? resource : `${resource} ${verb}` };
 	}
-	const misplaced = afterResource.find((token) => globalFlagNames.has(token.split("=")[0].slice(2)));
+	const misplaced = afterResource
+		.map((token) => token.split("=")[0].slice(2))
+		.find((name) => globalFlagNames.has(name));
 	if (misplaced !== undefined) {
-		throw new UsageError(`"${misplaced}" is a global flag and goes before "${resource}"`);
+		throw new UsageError(
+			misplaced === "clear"
+				? '"--clear" cannot be combined with a command'
+				: `"--${misplaced}" is a global flag and goes before "${resource}"`,
+		);
 	}
 	const [verb, ...verbArguments] = afterResource;
 	if (verb === undefined) {
@@ -327,6 +343,15 @@ export const errorReport = (error) => {
 export const main = async (argv) => {
 	try {
 		const command = parseCommandLine(argv);
+		if (command.clear) {
+			const { clearCache } = await import("../src/session.mjs");
+			const { removed, directory } = await clearCache();
+			const summary = removed
+				? `Removed ${directory} (browser profile and cached session)`
+				: `Nothing to remove in ${directory}`;
+			process.stdout.write(command.globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
+			return 0;
+		}
 		if (command.help !== null) {
 			process.stdout.write(usageText(command.help === "root" ? null : command.help));
 			return 0;

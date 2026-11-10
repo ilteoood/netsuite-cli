@@ -1,7 +1,7 @@
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { access, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loginForSessionCookie } from "./browser-login.mjs";
 
 const USER_AGENT =
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36";
@@ -39,6 +39,15 @@ const writeCachedSession = (account, cookieHeader) => {
 	chmodSync(SESSION_CACHE_PATH, 0o600);
 };
 
+export const clearCache = async ({ directory = CACHE_DIRECTORY } = {}) => {
+	const removed = await access(directory).then(
+		() => true,
+		() => false,
+	);
+	await rm(directory, { recursive: true, force: true });
+	return { removed, directory };
+};
+
 export const probeSession = async (account, cookieHeader) => {
 	const response = await fetch(netsuiteUrl(account, SESSION_PROBE_PATH), {
 		method: "POST",
@@ -57,8 +66,9 @@ const assertSessionIsValid = async (account, cookieHeader) => {
 	);
 };
 
-export const loginThroughBrowser = async ({ account = null, login = loginForSessionCookie, ...options } = {}) => {
-	const session = await login({
+export const loginThroughBrowser = async ({ account = null, login = null, ...options } = {}) => {
+	const signIn = login ?? (await import("./browser-login.mjs")).loginForSessionCookie;
+	const session = await signIn({
 		...options,
 		account,
 		validate: (candidate, candidateAccount) => probeSession(candidateAccount, candidate),

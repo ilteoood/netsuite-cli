@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { errorReport, parseCommandLine, usageText, weekDaysOf } from "../bin/netsuite-cli.mjs";
@@ -133,6 +136,19 @@ test("parseCommandLine reports the root help", () => {
 	assert.deepEqual(parseCommandLine(["--help", "timesheet"]).help, "root");
 });
 
+test("parseCommandLine reads --clear as a standalone command", () => {
+	assert.deepEqual(parseCommandLine(["--clear"]), {
+		globals: { loginUrl: null, cookieFile: null, json: false },
+		clear: true,
+	});
+	assert.equal(parseCommandLine(["--json", "--clear"]).clear, true);
+});
+
+test("parseCommandLine rejects --clear combined with a command", () => {
+	assert.equal(usageError(["--clear", "projects", "list"]), '"--clear" cannot be combined with a command');
+	assert.equal(usageError(["projects", "list", "--clear"]), '"--clear" cannot be combined with a command');
+});
+
 test("parseCommandLine reports the help of a verb and of a resource", () => {
 	const verb = parseCommandLine(["timesheet", "fill", "--help"]);
 	assert.equal(verb.help, "timesheet fill");
@@ -182,6 +198,20 @@ test("the binary prefixes a missing option value and exits 1", () => {
 	const result = run("--login-url");
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /^netsuite-cli: Option '--login-url <value>' argument missing/);
+});
+
+test("the binary removes the cache directory on --clear", () => {
+	const home = mkdtempSync(join(tmpdir(), "netsuite-clear-"));
+	mkdirSync(join(home, ".cache", "netsuite-cli", "browser-profile"), { recursive: true });
+
+	const result = spawnSync(process.execPath, [binary, "--clear"], {
+		encoding: "utf8",
+		env: { ...process.env, HOME: home },
+	});
+
+	assert.equal(result.status, 0);
+	assert.match(result.stdout, /Removed .*netsuite-cli/);
+	assert.equal(existsSync(join(home, ".cache", "netsuite-cli")), false);
 });
 
 test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", () => {
