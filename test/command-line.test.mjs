@@ -10,7 +10,8 @@ import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
 const run = (...argv) => spawnSync(process.execPath, [binary, ...argv], { encoding: "utf8" });
-const windowsHome = process.platform === "win32" ? "os.homedir() ignores HOME on win32" : false;
+// os.homedir() reads HOME on posix and USERPROFILE on win32, so both point at the temporary home
+const isolatedHome = (home) => ({ ...process.env, HOME: home, USERPROFILE: home });
 const usageError = (argv) => {
 	try {
 		parseCommandLine(argv);
@@ -153,6 +154,13 @@ test("parseCommandLine rejects --clear combined with a command", () => {
 	assert.equal(usageError(["projects", "list", "--clear"]), '"--clear" cannot be combined with a command');
 });
 
+test("parseCommandLine names an unknown verb before a misplaced global flag", () => {
+	assert.equal(
+		usageError(["timesheet", "bogus", "--clear"]),
+		'unknown verb "bogus" for "timesheet"; available: fill, add',
+	);
+});
+
 test("parseCommandLine reports the help of a verb and of a resource", () => {
 	const verb = parseCommandLine(["timesheet", "fill", "--help"]);
 	assert.equal(verb.help, "timesheet fill");
@@ -208,14 +216,14 @@ test("the binary prefixes a missing option value and exits 1", () => {
 	assert.match(result.stderr, /^netsuite-cli: Option '--login-url <value>' argument missing/);
 });
 
-test("the binary removes the cache directory on --clear", { skip: windowsHome }, () => {
+test("the binary removes the cache directory on --clear", () => {
 	const home = mkdtempSync(join(tmpdir(), "netsuite-clear-"));
 	mkdirSync(join(home, ".cache", "netsuite-cli", "browser-profile"), { recursive: true });
 	mkdirSync(join(home, ".cache", "other-app"), { recursive: true });
 
 	const result = spawnSync(process.execPath, [binary, "--clear"], {
 		encoding: "utf8",
-		env: { ...process.env, HOME: home, USERPROFILE: home },
+		env: isolatedHome(home),
 	});
 
 	assert.equal(result.status, 0);
@@ -224,13 +232,13 @@ test("the binary removes the cache directory on --clear", { skip: windowsHome },
 	assert.equal(existsSync(join(home, ".cache", "other-app")), true);
 });
 
-test("the binary prints the removal as JSON with --clear --json", { skip: windowsHome }, () => {
+test("the binary prints the removal as JSON with --clear --json", () => {
 	const home = mkdtempSync(join(tmpdir(), "netsuite-clear-"));
 	mkdirSync(join(home, ".cache", "netsuite-cli"), { recursive: true });
 
 	const result = spawnSync(process.execPath, [binary, "--clear", "--json"], {
 		encoding: "utf8",
-		env: { ...process.env, HOME: home, USERPROFILE: home },
+		env: isolatedHome(home),
 	});
 
 	assert.equal(result.status, 0);
@@ -258,6 +266,8 @@ test("parseCommandLine does not read a flag value as a global flag", () => {
 		"--memo=--json",
 	]);
 	assert.equal(command.flags.memo, "--json");
+	assert.doesNotMatch(usageError(["vacations", "create", "--memo", "--json"]), /global flag/);
+	assert.doesNotMatch(usageError(["vacations", "create", "--memo", "--help"]), /global flag/);
 });
 
 test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", () => {

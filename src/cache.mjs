@@ -11,6 +11,10 @@ export const clearCache = ({ directory = CACHE_DIRECTORY } = {}) => {
 		throw new Error(`Refusing to remove ${directory}: only a netsuite-cli cache directory can be cleared.`);
 	}
 	if (!existsSync(directory)) return { removed: false, directory };
-	rmSync(directory, { recursive: true, force: true });
+	try {
+		rmSync(directory, { recursive: true, force: true });
+	} catch (error) {
+		throw new Error(`Could not remove ${directory}. Close every Chrome window and try again.`, { cause: error });
+	}
 	return { removed: true, directory };
 };

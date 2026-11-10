@@ -7,7 +7,7 @@ import { test } from "node:test";
 process.env.HOME = mkdtempSync(join(tmpdir(), "netsuite-session-"));
 
 const { browserHeaders, loginThroughBrowser, netsuiteUrl, readCookieHeader } = await import("../src/session.mjs");
-const { clearCache } = await import("../src/cache.mjs");
+const { clearCache, SESSION_CACHE_PATH } = await import("../src/cache.mjs");
 test("netsuiteUrl points at the account host", () => {
 	assert.equal(netsuiteUrl("1234567", "/services/rest"), "https://1234567.app.netsuite.com/services/rest");
 });
@@ -52,8 +52,10 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 	const session = await loginThroughBrowser({ account: "1234567", login });
 
 	assert.deepEqual(session, { account: "1234567", cookieHeader: "JSESSIONID=new" });
-	const cachePath = join(process.env.HOME, ".cache", "netsuite-cli", "session.json");
-	assert.deepEqual(JSON.parse(readFileSync(cachePath, "utf8")), { account: "1234567", cookieHeader: "JSESSIONID=new" });
+	assert.deepEqual(JSON.parse(readFileSync(SESSION_CACHE_PATH, "utf8")), {
+		account: "1234567",
+		cookieHeader: "JSESSIONID=new",
+	});
 });
 
 test("clearCache removes the cache directory and reports whether it existed", () => {

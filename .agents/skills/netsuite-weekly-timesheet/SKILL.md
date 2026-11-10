@@ -2,7 +2,7 @@
 
 name: "netsuite-weekly-timesheet"
 description: "Fill, update or submit the weekly NetSuite timesheet of the signed-in account with the netsuite-cli binary, and list or file vacations: \"fill my timesheet\", \"log my hours in NetSuite\", \"submit my timesheet\", \"timesheet for last week\", \"my hours are still empty\"."
-version: 9
+version: 10
 created: "2026-11-09"
 updated: "2026-11-10"
 ---
@@ -20,7 +20,7 @@ Use when asked to fill, correct, check or submit the NetSuite weekly timesheet, 
 5. Vacations: `netsuite-cli vacations list` prints the upcoming non-cancelled absences (type, start, end, status, days, id); file one with `netsuite-cli vacations create --start YYYY-MM-DD [--end YYYY-MM-DD] --type "Annual Leave" [--memo <text>] [--reference <text>]`, which prints `Created <reference> (id <id>)`.
 6. The session flags are global and go before the resource: `netsuite-cli --cookie-file ~/cookie.txt timesheet fill ...`, `--login-url <url>`, `--json` for the raw report. Without a cookie the CLI opens Chrome on the login page and caches the session in `~/.cache/netsuite-cli/session.json`.
 
-7. A stuck browser profile is cleared on its own: `netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile and the cached session) and exits. It stands alone and takes no command. Close every Chrome window before running it, and pass `--login-url` on the next command, because the cleared cache held the account.
+7. A stuck browser profile is cleared on its own: `netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile and the cached session) and exits. It stands alone and takes no command. Close every Chrome window before running it, and pass `--login-url` on the next command, because the cleared cache held the account; a machine that passes a cookie must leave the cookie out for that run.
 
 ## Pitfalls
 

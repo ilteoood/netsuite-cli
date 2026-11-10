@@ -224,6 +224,11 @@ export const parseCommandLine = (argv) => {
 			help: helpVerb === null ? resource : `${resource} ${helpVerb}`,
 		};
 	}
+	const verbFlagName = verb?.startsWith("--") ? verb.split("=")[0].slice(2) : null;
+	const verbIsGlobalFlag = verbFlagName !== null && globalFlagNames.has(verbFlagName);
+	if (verb !== undefined && command === undefined && !verbIsGlobalFlag) {
+		throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
+	}
 	const misplaced = names.find((name) => globalFlagNames.has(name));
 	if (misplaced !== undefined) {
 		throw new UsageError(
@@ -232,9 +237,6 @@ export const parseCommandLine = (argv) => {
 	}
 	if (verb === undefined) {
 		throw new UsageError(`missing the verb for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
-	}
-	if (command === undefined) {
-		throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
 	}
 	const { values: parsedFlags } = parseStrict(afterResource.slice(1), parseOptions(command.flags));
 	const flags = { ...parsedFlags };
