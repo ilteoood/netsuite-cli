@@ -4,7 +4,7 @@ Command-line client for the NetSuite timesheet and vacation records of the signe
 
 ## Installation
 
-Requires Node.js 22 or newer. A Chrome or Chromium installation is needed for the first sign-in.
+Requires Node.js 26 or newer. A Chrome or Chromium installation is needed for the first sign-in.
 
 ```bash
 npm install

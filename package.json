@@ -7,7 +7,7 @@
 		"netsuite-cli": "./bin/netsuite-cli.mjs"
 	},
 	"engines": {
-		"node": ">=22"
+		"node": ">=26"
 	},
 	"scripts": {
 		"lint": "biome check .",
