@@ -72,7 +72,15 @@ const commands = {
 	},
 };
 
-const globalFlagNames = new Set(Object.keys(GLOBALS).filter((name) => name !== "help"));
+const CLEAR = {
+	type: "boolean",
+	default: false,
+	description: "Remove the browser profile and the cached session in ~/.cache/netsuite-cli, then exit",
+};
+
+const globalOptions = { ...GLOBALS, clear: CLEAR };
+
+const globalFlagNames = new Set(Object.keys(globalOptions).filter((name) => name !== "help"));
 
 const resources = [...new Set(Object.keys(commands).map((key) => key.split(" ")[0]))];
 const verbsOf = (resource) =>
@@ -95,7 +103,7 @@ const splitGlobals = (argv) => {
 		const token = argv[index];
 		if (!token.startsWith("-")) return [argv.slice(0, index), argv.slice(index)];
 		const name = token.split("=")[0].slice(2);
-		if (GLOBALS[name]?.type === "string" && !token.includes("=")) index += 1;
+		if (globalOptions[name]?.type === "string" && !token.includes("=")) index += 1;
 	}
 	return [argv, []];
 };
@@ -124,12 +132,16 @@ export const usageText = (target) => {
 	if (target === null) {
 		return [
 			"Usage: netsuite-cli [--login-url <url>] [--cookie-file <path>] [--json] <resource> <verb> [flags]",
+			"       netsuite-cli --clear",
 			"",
 			"Commands:",
 			...commandLines(Object.keys(commands)),
 			"",
 			"Global flags, before the resource:",
 			...usageOfFlags(GLOBALS),
+			"",
+			"Standalone flags:",
+			`  --clear  ${CLEAR.description}`,
 			"",
 			'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
 			"",
@@ -165,13 +177,17 @@ export const usageText = (target) => {
 
 export const parseCommandLine = (argv) => {
 	const [globalArguments, rest] = splitGlobals(argv);
-	const { values } = parseStrict(globalArguments, parseOptions(GLOBALS));
+	const { values } = parseStrict(globalArguments, parseOptions(globalOptions));
 	const globals = {
 		loginUrl: values["login-url"] ?? null,
 		cookieFile: values["cookie-file"] ?? null,
 		json: values.json ?? false,
 	};
 	if (values.help) return { globals, resource: null, verb: null, flags: {}, help: "root" };
+	if (values.clear) {
+		if (rest.length > 0) throw new UsageError('"--clear" cannot be combined with a command');
+		return { globals, clear: true };
+	}
 	const [resource, ...afterResource] = rest;
 	if (resource === undefined) {
 		throw new UsageError('missing the resource; run "netsuite-cli --help" for the command list');
@@ -183,9 +199,15 @@ export const parseCommandLine = (argv) => {
 		const verb = verbsOf(resource).find((name) => name === afterResource[0]) ?? null;
 		return { globals, resource, verb, flags: {}, help: verb === null ? resource : `${resource} ${verb}` };
 	}
-	const misplaced = afterResource.find((token) => globalFlagNames.has(token.split("=")[0].slice(2)));
+	const misplaced = afterResource
+		.map((token) => token.split("=")[0].slice(2))
+		.find((name) => globalFlagNames.has(name));
 	if (misplaced !== undefined) {
-		throw new UsageError(`"${misplaced}" is a global flag and goes before "${resource}"`);
+		throw new UsageError(
+			misplaced === "clear"
+				? '"--clear" cannot be combined with a command'
+				: `"--${misplaced}" is a global flag and goes before "${resource}"`,
+		);
 	}
 	const [verb, ...verbArguments] = afterResource;
 	if (verb === undefined) {
@@ -327,6 +349,15 @@ export const errorReport = (error) => {
 export const main = async (argv) => {
 	try {
 		const command = parseCommandLine(argv);
+		if (command.clear) {
+			const { clearCache } = await import("../src/session.mjs");
+			const { removed, directory } = clearCache();
+			const summary = removed
+				? `Removed ${directory} (browser profile and cached session)`
+				: `Nothing to remove in ${directory}`;
+			process.stdout.write(command.globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
+			return 0;
+		}
 		if (command.help !== null) {
 			process.stdout.write(usageText(command.help === "root" ? null : command.help));
 			return 0;

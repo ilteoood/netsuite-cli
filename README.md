@@ -22,6 +22,7 @@ netsuite-cli --login-url 'https://accounts.google.com/o/saml2/initsso?idpid=C00e
 ```
 
 The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600).
+Run `netsuite-cli --clear` to remove the profile and the cached session.
 
 Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. The browser is located automatically by `chrome-launcher`; set `NETSUITE_BROWSER` to the path of a specific Chrome or Chromium binary when several are installed.
 
@@ -47,6 +48,20 @@ Global flags must come before the resource:
 | `--help`               | Show the command list, or the flags of one command             |
 
 Run `netsuite-cli <resource> <verb> --help` for the flags of one command.
+
+## Clearing the profile
+
+`--clear` removes the whole `~/.cache/netsuite-cli` directory: the shared Chrome profile and the cached session. Use it when the profile is locked, corrupted, or holds an account that must be forgotten. The flag stands alone and cannot be combined with a command.
+
+```bash
+netsuite-cli --clear
+```
+
+```text
+Removed /home/user/.cache/netsuite-cli (browser profile and cached session)
+```
+
+The next command signs in again from a fresh profile.
 
 ## Commands
 
