@@ -1,0 +1,112 @@
+{
+	"week": "2026-11-16",
+	"timesheetId": "8001",
+	"employeeId": "4242",
+	"projects": [
+		{
+			"id": "1234",
+			"text": "Acme Platform"
+		},
+		{
+			"id": "1240",
+			"text": "Internal Tools"
+		},
+		{
+			"id": "1241",
+			"text": "Internal Delivery Management"
+		},
+		{
+			"id": "1242",
+			"text": "Internal Programme 2.0"
+		},
+		{
+			"id": "1243",
+			"text": "Internal Events"
+		},
+		{
+			"id": "1244",
+			"text": "Internal Meetings"
+		},
+		{
+			"id": "1245",
+			"text": "Internal Social Events"
+		}
+	],
+	"tasks": [
+		{
+			"id": "1234",
+			"tasks": [
+				{
+					"id": "2002",
+					"name": "Task 2"
+				}
+			]
+		},
+		{
+			"id": "1240",
+			"tasks": [
+				{
+					"id": "2001",
+					"name": "Internal Project Task"
+				}
+			]
+		},
+		{
+			"id": "1241",
+			"tasks": [
+				{
+					"id": "2003",
+					"name": "Internal Project Task"
+				}
+			]
+		},
+		{
+			"id": "1242",
+			"tasks": [
+				{
+					"id": "2004",
+					"name": "Internal Project Task"
+				}
+			]
+		},
+		{
+			"id": "1243",
+			"tasks": [
+				{
+					"id": "2005",
+					"name": "Internal Project Task"
+				}
+			]
+		},
+		{
+			"id": "1244",
+			"tasks": [
+				{
+					"id": "2006",
+					"name": "Internal Project Task"
+				}
+			]
+		},
+		{
+			"id": "1245",
+			"tasks": [
+				{
+					"id": "2007",
+					"name": "Internal Project Task"
+				}
+			]
+		}
+	],
+	"activity": {
+		"field": "item",
+		"label": "Service Item",
+		"available": false,
+		"reason": "Service Item column is a slaved field (item); its options are fetched only after a project is chosen and are not part of the page payload",
+		"observedOnFilledTimesheet": {
+			"id": "71",
+			"text": "Solution Delivery",
+			"week": "2026-11-09",
+			"timesheetId": "8002"
+		}
+	}
+}

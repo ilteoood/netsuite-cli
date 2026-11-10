@@ -1,0 +1,29 @@
+{
+	"name": "netsuite-cli",
+	"version": "1.0.0",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"netsuite-cli": "./bin/netsuite-cli.mjs"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"scripts": {
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"test": "node --test"
+	},
+	"dependencies": {
+		"chrome-launcher": "^1.2.3",
+		"date-fns": "^4.4.0",
+		"puppeteer-core": "^25.16.0"
+	},
+	"files": [
+		"bin",
+		"src"
+	],
+	"devDependencies": {
+		"@biomejs/biome": "^2.6.6"
+	}
+}
