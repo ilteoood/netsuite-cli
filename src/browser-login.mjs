@@ -55,7 +55,6 @@ export const loginForSessionCookie = async (options = {}) => {
 			"Signing in needs loginUrl in the configuration when no account is set, because the account is only known once the browser lands on it.",
 		);
 	}
-	const browserPath = options.browserPath ?? process.env.NETSUITE_BROWSER;
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	await mkdir(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
@@ -66,7 +65,6 @@ export const loginForSessionCookie = async (options = {}) => {
 	let browser;
 	try {
 		browser = await puppeteer.launch({
-			executablePath: browserPath,
 			userDataDir: profileDirectory,
 			headless: false,
 			args: ["--no-first-run", "--no-default-browser-check"],
