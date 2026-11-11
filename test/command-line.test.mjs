@@ -5,184 +5,76 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { errorReport, parseCommandLine, usageText, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { buildProgram, errorReport, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
 const run = (...argv) => spawnSync(process.execPath, [binary, ...argv], { encoding: "utf8" });
 // os.homedir() reads HOME on posix and USERPROFILE on win32, so both point at the temporary home
 const isolatedHome = (home) => ({ ...process.env, HOME: home, USERPROFILE: home });
-const usageError = (argv) => {
-	try {
-		parseCommandLine(argv);
-	} catch (error) {
-		assert.ok(error instanceof UsageError, error.message);
-		return error.message;
-	}
-	assert.fail(`expected a UsageError for ${argv.join(" ")}`);
+const parse = async (argv) => {
+	const dispatched = [];
+	const program = buildProgram(async (command) => {
+		dispatched.push(command);
+	});
+	await program.parseAsync(argv, { from: "user" });
+	return dispatched;
 };
 
-test("parseCommandLine reads the globals before the resource and the flags after the verb", () => {
-	assert.deepEqual(
-		parseCommandLine([
-			"--json",
-			"--login-url",
-			"https://1234567.app.netsuite.com/app/login.nl",
-			"--cookie-file",
-			"/tmp/cookie.txt",
-			"timesheet",
-			"fill",
-			"--project",
-			"Acme Platform",
-			"--task",
-			"WebPortal",
-			"--hours",
-			"8",
-		]),
-		{
-			globals: {
-				loginUrl: "https://1234567.app.netsuite.com/app/login.nl",
-				cookieFile: "/tmp/cookie.txt",
-				json: true,
-			},
-			resource: "timesheet",
-			verb: "fill",
-			flags: {
-				project: "Acme Platform",
-				task: "WebPortal",
-				hours: "8",
-				"dry-run": false,
-				force: false,
-				submit: false,
-			},
-			help: null,
-		},
-	);
-});
-
-test("parseCommandLine defaults the globals and the boolean flags", () => {
-	const command = parseCommandLine([
+test("the parser reads the globals before the resource and the flags after the verb", async () => {
+	const [command] = await parse([
+		"--json",
+		"--login-url",
+		"https://1234567.app.netsuite.com/app/login.nl",
+		"--cookie-file",
+		"/tmp/cookie.txt",
 		"timesheet",
-		"add",
-		"--date",
-		"2026-11-16",
+		"fill",
 		"--project",
-		"Acme",
+		"Acme Platform",
 		"--task",
-		"Web",
+		"WebPortal",
 		"--hours",
-		"2",
+		"8",
 	]);
-	assert.deepEqual(command.globals, { loginUrl: null, cookieFile: null, json: false });
-	assert.deepEqual(command.flags, { date: "2026-11-16", project: "Acme", task: "Web", hours: "2" });
+	assert.deepEqual(command.globals, {
+		loginUrl: "https://1234567.app.netsuite.com/app/login.nl",
+		cookieFile: "/tmp/cookie.txt",
+		json: true,
+	});
+	assert.deepEqual(command.flags, { project: "Acme Platform", task: "WebPortal", hours: "8" });
+	assert.equal(command.key, "timesheet fill");
 });
 
-test("parseCommandLine accepts --flag=value", () => {
-	const command = parseCommandLine(["--login-url=https://example.test/login", "vacations", "list"]);
-	assert.equal(command.globals.loginUrl, "https://example.test/login");
+test("the parser defaults the globals and leaves the flags out", async () => {
+	const [command] = await parse(["projects", "list"]);
+	assert.deepEqual(command.globals, { loginUrl: null, cookieFile: null, json: false });
 	assert.deepEqual(command.flags, {});
 });
 
-test("parseCommandLine rejects a global flag after the resource", () => {
-	assert.equal(
-		usageError(["timesheet", "fill", "--json", "--project", "Acme", "--task", "Web", "--hours", "8"]),
-		'"--json" is a global flag and goes before "timesheet"',
-	);
+test("the parser accepts --flag=value", async () => {
+	const [command] = await parse(["--login-url=https://example.test/login", "vacations", "list"]);
+	assert.equal(command.globals.loginUrl, "https://example.test/login");
 });
 
-test("parseCommandLine rejects a global flag before the verb", () => {
-	assert.match(usageError(["timesheet", "--cookie-file", "c.txt", "fill"]), /global flag/);
+test("the parser reads a flag value as a value and not as a global flag", async () => {
+	const [command] = await parse([
+		"vacations",
+		"create",
+		"--start",
+		"2027-04-14",
+		"--type",
+		"Annual Leave",
+		"--memo=--json",
+	]);
+	assert.equal(command.flags.memo, "--json");
 });
 
-test("parseCommandLine rejects an unknown global flag", () => {
-	assert.equal(usageError(["--verbose", "projects", "list"]), 'unknown flag "--verbose"');
-});
-
-test("parseCommandLine rejects an unknown flag of a verb", () => {
-	assert.equal(usageError(["projects", "list", "--week", "2026-11-16"]), 'unknown flag "--week"');
-});
-
-test("parseCommandLine rejects an unexpected argument after the verb", () => {
-	assert.match(usageError(["projects", "list", "extra"]), /extra/);
-});
-
-test("parseCommandLine rejects a missing resource", () => {
-	assert.match(usageError([]), /missing the resource/);
-});
-
-test("parseCommandLine rejects a missing verb", () => {
-	assert.equal(usageError(["vacations"]), 'missing the verb for "vacations"; available: list, create');
-});
-
-test("parseCommandLine names the available verbs when the verb is unknown", () => {
-	assert.equal(usageError(["timesheet", "show"]), 'unknown verb "show" for "timesheet"; available: fill, add');
-});
-
-test("parseCommandLine names the available resources when the resource is unknown", () => {
-	assert.equal(usageError(["time", "fill"]), 'unknown resource "time"; available: projects, vacations, timesheet');
-});
-
-test("parseCommandLine rejects a verb without its required flags", () => {
-	assert.equal(usageError(["vacations", "create", "--start", "2027-04-14"]), '"vacations create" needs --type <name>');
-});
-
-test("parseCommandLine reports the root help", () => {
-	assert.deepEqual(parseCommandLine(["--help"]), {
-		globals: { loginUrl: null, cookieFile: null, json: false },
-		resource: null,
-		verb: null,
-		flags: {},
-		help: "root",
-	});
-	assert.deepEqual(parseCommandLine(["--help", "timesheet"]).help, "root");
-});
-
-test("parseCommandLine reads --clear as a standalone command", () => {
-	assert.deepEqual(parseCommandLine(["--clear"]), {
-		globals: { loginUrl: null, cookieFile: null, json: false },
-		resource: null,
-		verb: null,
-		flags: {},
-		help: null,
-		clear: true,
-	});
-	assert.equal(parseCommandLine(["--json", "--clear"]).clear, true);
-});
-
-test("parseCommandLine rejects --clear combined with a command", () => {
-	assert.equal(usageError(["--clear", "projects", "list"]), '"--clear" cannot be combined with a command');
-	assert.equal(usageError(["projects", "list", "--clear"]), '"--clear" cannot be combined with a command');
-});
-
-test("parseCommandLine names an unknown verb before a misplaced global flag", () => {
-	assert.equal(
-		usageError(["timesheet", "bogus", "--clear"]),
-		'unknown verb "bogus" for "timesheet"; available: fill, add',
-	);
-});
-
-test("parseCommandLine reports the help of a verb and of a resource", () => {
-	const verb = parseCommandLine(["timesheet", "fill", "--help"]);
-	assert.equal(verb.help, "timesheet fill");
-	assert.equal(verb.verb, "fill");
-	assert.equal(parseCommandLine(["timesheet", "--help"]).help, "timesheet");
-});
-
-test("usageText prints every command at the root and only its own flags for a verb", () => {
-	const root = usageText(null);
-	for (const key of ["projects list", "vacations list", "vacations create", "timesheet fill", "timesheet add"]) {
-		assert.ok(root.includes(key), key);
-	}
-	const globalBlock = root.split("Global flags, before the resource:")[1].split("Standalone flag, with no command:")[0];
-	assert.ok(globalBlock.includes("--login-url <url>"));
-	assert.ok(!globalBlock.includes("--clear"));
-	assert.ok(root.split("Standalone flag, with no command:")[1].includes("--clear"));
-	const verb = usageText("timesheet fill");
-	assert.ok(verb.includes("--force"));
-	assert.ok(verb.includes("--submit"));
-	assert.ok(!verb.includes("--start"));
-	assert.ok(!verb.includes("--reference"));
-	assert.ok(verb.includes("Global flags go before the resource: --login-url, --cookie-file, --json."));
+test("the parser keeps the boolean flags out until they are given", async () => {
+	const [without] = await parse(["timesheet", "fill", "--project", "Acme", "--task", "Web", "--hours", "8"]);
+	assert.equal(without.flags.dryRun, undefined);
+	const [given] = await parse(["timesheet", "fill", "--project", "Acme", "--task", "Web", "--hours", "8", "--dry-run"]);
+	assert.equal(given.flags.dryRun, true);
 });
 
 test("errorReport maps UsageError to exit 1 and everything else to exit 2", () => {
@@ -203,17 +95,93 @@ test("the binary prints the usage on --help and exits 0", () => {
 	assert.equal(result.stderr, "");
 });
 
-test("the binary prints a prefixed error line and exits 1 on a usage error", () => {
+test("the binary lists the resources and the global flags on the root help", () => {
+	const result = run("--help");
+	for (const resource of ["projects", "vacations", "timesheet"]) {
+		assert.match(result.stdout, new RegExp(resource));
+	}
+	assert.match(result.stdout, /--login-url <url>/);
+	assert.match(result.stdout, /--cookie-file <path>/);
+	assert.match(result.stdout, /--json/);
+	assert.match(result.stdout, /--clear/);
+});
+
+test("the binary prints the flags of one verb and no flag of another", () => {
+	const result = run("timesheet", "fill", "--help");
+	assert.equal(result.status, 0);
+	assert.match(result.stdout, /Usage: netsuite-cli timesheet fill/);
+	assert.match(result.stdout, /--dry-run/);
+	assert.match(result.stdout, /--submit/);
+	assert.doesNotMatch(result.stdout, /--start/);
+	assert.match(result.stdout, /Global flags go before the resource: --login-url, --cookie-file, --json\./);
+});
+
+test("the binary prints a prefixed error line and exits 1 on an unknown verb", () => {
 	const result = run("timesheet", "show");
 	assert.equal(result.status, 1);
 	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: unknown verb "show" for "timesheet"/);
+	assert.match(result.stderr, /^netsuite-cli: unknown command 'show'/);
+});
+
+test("the binary names the available resources when the resource is unknown", () => {
+	const result = run("time", "fill");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: unknown resource "time"; available: projects, vacations, timesheet/);
+});
+
+test("the binary prints the help of a resource and exits 1 when the verb is missing", () => {
+	const result = run("vacations");
+	assert.equal(result.status, 1);
+	assert.equal(result.stdout, "");
+	assert.match(result.stderr, /Usage: netsuite-cli vacations/);
+});
+
+test("the binary rejects a global flag after the resource", () => {
+	const result = run("timesheet", "fill", "--json", "--project", "Acme", "--task", "Web", "--hours", "8");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--json'/);
+});
+
+test("the binary rejects a global flag before the verb", () => {
+	const result = run("timesheet", "--cookie-file", "c.txt", "fill");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--cookie-file'/);
+});
+
+test("the binary rejects a missing resource", () => {
+	const result = run();
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: missing the resource/);
+});
+
+test("the binary rejects an unknown flag", () => {
+	const result = run("--verbose", "projects", "list");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--verbose'/);
+});
+
+test("the binary rejects a flag of another verb", () => {
+	const result = run("projects", "list", "--week", "2026-11-16");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--week'/);
+});
+
+test("the binary rejects an unexpected argument after the verb", () => {
+	const result = run("projects", "list", "extra");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: too many arguments for 'list'/);
 });
 
 test("the binary prefixes a missing option value and exits 1", () => {
 	const result = run("--login-url");
 	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: Option '--login-url <value>' argument missing/);
+	assert.match(result.stderr, /^netsuite-cli: option '--login-url <url>' argument missing/);
+});
+
+test("the binary names the missing required flag of a verb", () => {
+	const result = run("vacations", "create", "--start", "2027-04-14");
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: required option '--type <name>' not specified/);
 });
 
 test("the binary removes the cache directory on --clear", () => {
@@ -249,25 +217,23 @@ test("the binary prints the removal as JSON with --clear --json", () => {
 });
 
 test("the binary rejects --clear combined with a command and exits 1", () => {
-	const result = run("--clear", "projects", "list");
-	assert.equal(result.status, 1);
-	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: "--clear" cannot be combined with a command/);
+	for (const argv of [
+		["--clear", "projects"],
+		["--clear", "projects", "list"],
+		["projects", "list", "--clear"],
+	]) {
+		const result = run(...argv);
+		assert.equal(result.status, 1);
+		assert.equal(result.stdout, "");
+		assert.match(result.stderr, /^netsuite-cli: "--clear" cannot be combined with a command/);
+	}
 });
 
-test("parseCommandLine does not read a flag value as a global flag", () => {
-	const command = parseCommandLine([
-		"vacations",
-		"create",
-		"--start",
-		"2027-04-14",
-		"--type",
-		"Annual Leave",
-		"--memo=--json",
-	]);
-	assert.equal(command.flags.memo, "--json");
-	assert.doesNotMatch(usageError(["vacations", "create", "--memo", "--json"]), /global flag/);
-	assert.doesNotMatch(usageError(["vacations", "create", "--memo", "--help"]), /global flag/);
+test("the binary refuses a --clear typed between the resource and the verb", () => {
+	const result = run("projects", "--clear", "list");
+	assert.equal(result.status, 1);
+	assert.equal(result.stdout, "");
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--clear'/);
 });
 
 test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", () => {
