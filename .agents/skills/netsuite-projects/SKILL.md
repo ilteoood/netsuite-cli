@@ -6,14 +6,14 @@ description: "List the NetSuite projects of the signed-in account with the netsu
 
 ## When to Use
 
-Use when asked which projects the NetSuite timesheet offers, or which project name or id to pass to `timesheet fill` and `timesheet add`, for the account the CLI is signed in as. The tool is the `netsuite-cli` binary (`node bin/netsuite-cli.mjs` inside this repository) and the command is `netsuite-cli projects list`; `netsuite-cli projects list --help` lists the flags. Writing time is the `netsuite-timesheet` skill; this one only reads.
+Use when asked which projects the NetSuite timesheet offers, or which project name or id to pass to `timesheet fill` and `timesheet add`, for the account the CLI is signed in as. The tool is the `netsuite-cli` binary (run as `npx github:ilteoood/netsuite-cli`, no install needed) and the command is `npx github:ilteoood/netsuite-cli projects list`; `npx github:ilteoood/netsuite-cli projects list --help` lists the flags. Writing time is the `netsuite-timesheet` skill; this one only reads.
 
 ## Procedure
 
-1. `netsuite-cli projects list` prints the project names and ids offered by the timesheet page of the current week.
-2. `netsuite-cli --json projects list` prints the same rows as JSON when the caller needs ids without parsing the table.
-3. The session flags are global and go before the resource: `netsuite-cli --cookie-file ~/cookie.txt projects list`. Without a cookie the CLI opens Chrome on the NetSuite sign-in page and caches the session in `~/.cache/netsuite-cli/session.json`. The account itself is only known from that cache or from `netsuite-cli login <url>`, which signs in on the pasted NetSuite sign-in page and stores it for the later sign-ins, so a cookie alone is not enough on a machine that never signed in through the browser.
-4. A stuck browser profile is cleared on its own: `netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile, the cached session and the stored login page) and exits. It stands alone and takes no command. Close every Chrome window before running it, and run `netsuite-cli login <url>` again afterwards, because the cleared cache held the account and the page; a machine that passes a cookie must leave the cookie out for that run.
+1. `npx github:ilteoood/netsuite-cli projects list` prints the project names and ids offered by the timesheet page of the current week.
+2. `npx github:ilteoood/netsuite-cli --json projects list` prints the same rows as JSON when the caller needs ids without parsing the table.
+3. The session flags are global and go before the resource: `npx github:ilteoood/netsuite-cli --cookie-file ~/cookie.txt projects list`. Without a cookie the CLI opens Chrome on the NetSuite sign-in page and caches the session in `~/.cache/netsuite-cli/session.json`. The account itself is only known from that cache or from `npx github:ilteoood/netsuite-cli login <url>`, which signs in on the pasted NetSuite sign-in page and stores it for the later sign-ins, so a cookie alone is not enough on a machine that never signed in through the browser.
+4. A stuck browser profile is cleared on its own: `npx github:ilteoood/netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile, the cached session and the stored login page) and exits. It stands alone and takes no command. Close every Chrome window before running it, and run `npx github:ilteoood/netsuite-cli login <url>` again afterwards, because the cleared cache held the account and the page; a machine that passes a cookie must leave the cookie out for that run.
 
 ## Pitfalls
 
@@ -25,6 +25,6 @@ Use when asked which projects the NetSuite timesheet offers, or which project na
 
 ## Verification
 
-1. `netsuite-cli projects list` prints a table with the `Project` and `Id` columns, one line per project, and the exit code is 0.
-2. `netsuite-cli --json projects list` prints the same projects as a JSON array.
+1. `npx github:ilteoood/netsuite-cli projects list` prints a table with the `Project` and `Id` columns, one line per project, and the exit code is 0.
+2. `npx github:ilteoood/netsuite-cli --json projects list` prints the same projects as a JSON array.
 3. The project name and id used in a `timesheet fill --dry-run` plan appear in that listing.
