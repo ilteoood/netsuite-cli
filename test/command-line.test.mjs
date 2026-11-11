@@ -24,8 +24,6 @@ const parse = async (argv) => {
 test("the parser reads the globals before the resource and the flags after the verb", async () => {
 	const [command] = await parse([
 		"--json",
-		"--login-url",
-		"https://1234567.app.netsuite.com/app/login.nl",
 		"--cookie-file",
 		"/tmp/cookie.txt",
 		"timesheet",
@@ -38,7 +36,6 @@ test("the parser reads the globals before the resource and the flags after the v
 		"8",
 	]);
 	assert.deepEqual(command.globals, {
-		loginUrl: "https://1234567.app.netsuite.com/app/login.nl",
 		cookieFile: "/tmp/cookie.txt",
 		json: true,
 	});
@@ -48,13 +45,13 @@ test("the parser reads the globals before the resource and the flags after the v
 
 test("the parser defaults the globals and leaves the flags out", async () => {
 	const [command] = await parse(["projects", "list"]);
-	assert.deepEqual(command.globals, { loginUrl: null, cookieFile: null, json: false });
+	assert.deepEqual(command.globals, { cookieFile: null, json: false });
 	assert.deepEqual(command.flags, {});
 });
 
 test("the parser accepts --flag=value", async () => {
-	const [command] = await parse(["--login-url=https://example.test/login", "vacations", "list"]);
-	assert.equal(command.globals.loginUrl, "https://example.test/login");
+	const [command] = await parse(["--cookie-file=/tmp/cookie.txt", "vacations", "list"]);
+	assert.equal(command.globals.cookieFile, "/tmp/cookie.txt");
 });
 
 test("the parser reads a flag value as a value and not as a global flag", async () => {
@@ -100,7 +97,8 @@ test("the binary lists the resources and the global flags on the root help", () 
 	for (const resource of ["projects", "vacations", "timesheet"]) {
 		assert.match(result.stdout, new RegExp(resource));
 	}
-	assert.match(result.stdout, /--login-url <url>/);
+	assert.match(result.stdout, / {7}netsuite-cli login \[url\]/);
+	assert.doesNotMatch(result.stdout, /--login-url/);
 	assert.match(result.stdout, /--cookie-file <path>/);
 	assert.match(result.stdout, /--json/);
 	assert.match(result.stdout, /--clear/);
@@ -113,7 +111,7 @@ test("the binary prints the flags of one verb and no flag of another", () => {
 	assert.match(result.stdout, /--dry-run/);
 	assert.match(result.stdout, /--submit/);
 	assert.doesNotMatch(result.stdout, /--start/);
-	assert.match(result.stdout, /Global flags go before the resource: --login-url, --cookie-file, --json\./);
+	assert.match(result.stdout, /Global flags go before the resource: --cookie-file, --json\./);
 });
 
 test("the binary prints a prefixed error line and exits 1 on an unknown verb", () => {
@@ -126,7 +124,10 @@ test("the binary prints a prefixed error line and exits 1 on an unknown verb", (
 test("the binary names the available resources when the resource is unknown", () => {
 	const result = run("time", "fill");
 	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: unknown resource "time"; available: projects, vacations, timesheet/);
+	assert.match(
+		result.stderr,
+		/^netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet/,
+	);
 });
 
 test("the binary prints the help of a resource and exits 1 when the verb is missing", () => {
@@ -173,9 +174,46 @@ test("the binary rejects an unexpected argument after the verb", () => {
 });
 
 test("the binary prefixes a missing option value and exits 1", () => {
-	const result = run("--login-url");
+	const result = run("--cookie-file");
 	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: option '--login-url <url>' argument missing/);
+	assert.match(result.stderr, /^netsuite-cli: option '--cookie-file <path>' argument missing/);
+});
+
+test("the parser sends login with its url and without one", async () => {
+	const [withUrl] = await parse(["login", "https://example.test/sso"]);
+	assert.equal(withUrl.key, "login");
+	assert.deepEqual(withUrl.flags, { url: "https://example.test/sso" });
+
+	const [withoutUrl] = await parse(["login"]);
+	assert.deepEqual(withoutUrl.flags, { url: null });
+});
+
+test("the binary rejects a login url that is not an https page", () => {
+	const result = run("login", "http://example.test/sso");
+
+	assert.equal(result.status, 1);
+	assert.match(
+		result.stderr,
+		/^netsuite-cli: login takes the NetSuite sign-in page as an https URL, not "http:\/\/example\.test\/sso"/,
+	);
+});
+
+test("the binary refuses to combine login with a cookie file", () => {
+	const result = run("--cookie-file", "/tmp/cookie.txt", "login", "https://example.test/sso");
+
+	assert.equal(result.status, 1);
+	assert.match(
+		result.stderr,
+		/^netsuite-cli: "login" signs in through the browser, so it cannot be combined with "--cookie-file"/,
+	);
+});
+
+test("the binary asks for the login url when none is stored", () => {
+	const home = mkdtempSync(join(tmpdir(), "netsuite-login-"));
+	const result = spawnSync(process.execPath, [binary, "login"], { encoding: "utf8", env: isolatedHome(home) });
+
+	assert.equal(result.status, 1);
+	assert.match(result.stderr, /^netsuite-cli: login has no stored sign-in page yet/);
 });
 
 test("the binary names the missing required flag of a verb", () => {

@@ -20,18 +20,36 @@ export const readCookieHeader = ({ cookie, cookieFile } = {}) => {
 	return null;
 };
 
-const readCachedSession = () => {
+const readSessionFile = () => {
 	try {
 		const cached = JSON.parse(readFileSync(SESSION_CACHE_PATH, "utf8"));
-		return cached.account && cached.cookieHeader ? cached : null;
+		return typeof cached === "object" && cached !== null ? cached : null;
 	} catch {
 		return null;
 	}
 };
 
-const writeCachedSession = (account, cookieHeader) => {
+const readCachedSession = () => {
+	const cached = readSessionFile();
+	return cached?.account && cached?.cookieHeader ? cached : null;
+};
+
+export const isNetsuiteLoginUrl = (value) => {
+	try {
+		return new URL(value).protocol === "https:";
+	} catch {
+		return false;
+	}
+};
+
+export const storedLoginUrl = () => {
+	const loginUrl = readSessionFile()?.loginUrl;
+	return isNetsuiteLoginUrl(loginUrl) ? loginUrl : null;
+};
+
+const writeCachedSession = (account, cookieHeader, loginUrl) => {
 	mkdirSync(CACHE_DIRECTORY, { recursive: true });
-	writeFileSync(SESSION_CACHE_PATH, JSON.stringify({ account, cookieHeader }), { mode: 0o600 });
+	writeFileSync(SESSION_CACHE_PATH, JSON.stringify({ account, cookieHeader, loginUrl }), { mode: 0o600 });
 	chmodSync(SESSION_CACHE_PATH, 0o600);
 };
 
@@ -53,26 +71,28 @@ const assertSessionIsValid = async (account, cookieHeader) => {
 	);
 };
 
-export const loginThroughBrowser = async ({ account = null, login = null, ...options } = {}) => {
+export const loginThroughBrowser = async ({ account = null, loginUrl = null, login = null, ...options } = {}) => {
 	const signIn = login ?? (await import("./browser-login.mjs")).loginForSessionCookie;
+	const signInUrl = loginUrl ?? storedLoginUrl();
 	const session = await signIn({
 		...options,
 		account,
+		loginUrl: signInUrl,
 		validate: (candidate, candidateAccount) => probeSession(candidateAccount, candidate),
 	});
-	writeCachedSession(session.account, session.cookieHeader);
+	writeCachedSession(session.account, session.cookieHeader, signInUrl);
 	return { account: session.account, cookieHeader: session.cookieHeader };
 };
 
-export const resolveCookieHeader = async (configuredAccount, options = {}) => {
+export const resolveCookieHeader = async (options = {}) => {
 	const { login, ...sessionOptions } = options;
 	const cached = readCachedSession();
-	const account = configuredAccount ?? cached?.account ?? null;
+	const account = cached?.account ?? null;
 	const provided = readCookieHeader(sessionOptions);
 	if (provided) {
 		if (!account) {
 			throw new Error(
-				"A cookie was given without an account, so there is no host to send it to. Pass --login-url and sign in through the browser once instead.",
+				'A cookie was given without an account, so there is no host to send it to. Run "netsuite-cli login <url>" and sign in through the browser once instead.',
 			);
 		}
 		await assertSessionIsValid(account, provided);
@@ -87,5 +107,5 @@ export const resolveCookieHeader = async (configuredAccount, options = {}) => {
 			// The cached session expired, fall through to a fresh browser login.
 		}
 	}
-	return loginThroughBrowser({ ...sessionOptions, account: configuredAccount ?? null, login });
+	return loginThroughBrowser({ ...sessionOptions, account: cached?.account ?? null, login });
 };

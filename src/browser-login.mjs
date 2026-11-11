@@ -52,7 +52,7 @@ const readSessionCookies = async (browser) => {
 export const loginForSessionCookie = async (options = {}) => {
 	if (!options.account && !options.loginUrl) {
 		throw new Error(
-			"Signing in needs loginUrl in the configuration when no account is set, because the account is only known once the browser lands on it.",
+			'Signing in needs the NetSuite sign-in page when no account is set, because the account is only known once the browser lands on it. Run "netsuite-cli login <url>" once to store it.',
 		);
 	}
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;

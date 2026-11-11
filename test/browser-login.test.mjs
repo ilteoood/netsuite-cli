@@ -45,5 +45,5 @@ test("accountFromHost reads the account from the landing url", () => {
 });
 
 test("loginForSessionCookie needs a login url when no account is given", async () => {
-	await assert.rejects(loginForSessionCookie({}), /needs loginUrl/);
+	await assert.rejects(loginForSessionCookie({}), /needs the NetSuite sign-in page/);
 });
