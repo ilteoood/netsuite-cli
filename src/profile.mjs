@@ -1,13 +1,10 @@
-import { execFile } from "node:child_process";
 import { chmodSync, existsSync, readlinkSync, writeFileSync } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { promisify } from "node:util";
+import { create, extract, list } from "tar";
 import { BROWSER_PROFILE_DIRECTORY_NAME, CACHE_DIRECTORY, clearCache } from "./cache.mjs";
 import { UsageError } from "./errors.mjs";
-
-const run = promisify(execFile);
 
 const SESSION_FILE_NAME = "session.json";
 
@@ -30,25 +27,13 @@ const ARCHIVE_EXCLUDES = [
 	"SingletonSocket",
 ];
 
-const tar = async (args) => {
-	try {
-		const { stdout } = await run("tar", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-		return stdout;
-	} catch (error) {
-		if (error.code === "ENOENT") {
-			throw new Error("tar is not installed on this machine, so the browser profile cannot be archived.");
-		}
-		const reason = (error.stderr ?? "").split("\n").find((line) => line.trim().length > 0) ?? error.message;
-		throw new Error(`tar failed: ${reason}`);
-	}
-};
+const isExcludedMember = (member) => member.split("/").some((name) => ARCHIVE_EXCLUDES.includes(name));
 
 const listArchiveMembers = async (archive) => {
 	try {
-		return (await tar(["-tzf", archive]))
-			.split("\n")
-			.map((member) => member.trim())
-			.filter((member) => member.length > 0);
+		const members = [];
+		await list({ file: archive, strict: true, onReadEntry: (entry) => members.push(entry.path) });
+		return members;
 	} catch (error) {
 		throw new Error(`The archive ${archive} could not be read: ${error.message}`);
 	}
@@ -111,15 +96,17 @@ export const exportProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 	const members = [BROWSER_PROFILE_DIRECTORY_NAME];
 	if (existsSync(join(cacheDirectory, SESSION_FILE_NAME))) members.push(SESSION_FILE_NAME);
 	writeFileSync(archive, "", { mode: 0o600 });
-	await tar([
-		"-czf",
-		archive,
-		...ARCHIVE_EXCLUDES.map((name) => `--exclude=${name}`),
-		"-C",
-		cacheDirectory,
-		...members,
-	]);
 	chmodSync(archive, 0o600);
+	await create(
+		{
+			gzip: true,
+			file: archive,
+			cwd: cacheDirectory,
+			strict: true,
+			filter: (member) => !isExcludedMember(member),
+		},
+		members,
+	);
 
 	const { size } = await stat(archive);
 	return { archive, bytes: size };
@@ -163,7 +150,7 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 	}
 	await mkdir(cacheDirectory, { recursive: true });
 	try {
-		await tar(["-xzf", archive, "--no-same-owner", "-C", cacheDirectory]);
+		await extract({ file: archive, cwd: cacheDirectory, preserveOwner: false, strict: true });
 	} catch (error) {
 		throw new Error(`The archive ${archive} could not be read: ${error.message}`);
 	}

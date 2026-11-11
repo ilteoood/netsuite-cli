@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -14,6 +14,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { create, list } from "tar";
 import { buildProgram } from "../bin/netsuite-cli.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -36,11 +37,11 @@ const seedProfile = (home, { session = true } = {}) => {
 	}
 };
 
-const membersOf = (archive) =>
-	execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
-		.split("\n")
-		.map((member) => member.trim())
-		.filter((member) => member.length > 0);
+const membersOf = (archive) => {
+	const members = [];
+	list({ file: archive, sync: true, onReadEntry: (entry) => members.push(entry.path) });
+	return members;
+};
 
 const exportedArchive = (home) => {
 	const archive = join(home, "profile.tar.gz");
@@ -149,7 +150,7 @@ test("the import refuses an archive that is not a profile archive", () => {
 	const home = temporaryHome();
 	const archive = join(home, "foreign.tar.gz");
 	writeFileSync(join(home, "notes.txt"), "hello");
-	execFileSync("tar", ["-czf", archive, "-C", home, "notes.txt"]);
+	create({ gzip: true, file: archive, cwd: home, sync: true }, ["notes.txt"]);
 
 	const result = runIn(home, "profile", "import", archive);
 
