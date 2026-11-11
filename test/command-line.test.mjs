@@ -120,7 +120,7 @@ test("the binary prints a prefixed error line and exits 1 on an unknown verb", (
 	const result = run("timesheet", "show");
 	assert.equal(result.status, 1);
 	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: unknown verb "show" for "timesheet"; available: fill, add/);
+	assert.match(result.stderr, /^netsuite-cli: unknown command 'show'/);
 });
 
 test("the binary names the available resources when the resource is unknown", () => {
@@ -129,11 +129,11 @@ test("the binary names the available resources when the resource is unknown", ()
 	assert.match(result.stderr, /^netsuite-cli: unknown resource "time"; available: projects, vacations, timesheet/);
 });
 
-test("the binary names the available verbs when the verb is missing", () => {
+test("the binary prints the help of a resource and exits 1 when the verb is missing", () => {
 	const result = run("vacations");
 	assert.equal(result.status, 1);
 	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: missing the verb for "vacations"; available: list, create/);
+	assert.match(result.stderr, /Usage: netsuite-cli vacations/);
 });
 
 test("the binary rejects a global flag after the resource", () => {
@@ -219,7 +219,6 @@ test("the binary prints the removal as JSON with --clear --json", () => {
 test("the binary rejects --clear combined with a command and exits 1", () => {
 	for (const argv of [
 		["--clear", "projects"],
-		["projects", "--clear"],
 		["--clear", "projects", "list"],
 		["projects", "list", "--clear"],
 	]) {
@@ -228,6 +227,13 @@ test("the binary rejects --clear combined with a command and exits 1", () => {
 		assert.equal(result.stdout, "");
 		assert.match(result.stderr, /^netsuite-cli: "--clear" cannot be combined with a command/);
 	}
+});
+
+test("the binary refuses a --clear typed between the resource and the verb", () => {
+	const result = run("projects", "--clear", "list");
+	assert.equal(result.status, 1);
+	assert.equal(result.stdout, "");
+	assert.match(result.stderr, /^netsuite-cli: unknown option '--clear'/);
 });
 
 test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", () => {

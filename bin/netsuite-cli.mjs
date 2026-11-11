@@ -72,8 +72,6 @@ const resourceSummaries = {
 	timesheet: "Timesheet entries",
 };
 
-const globalFlags = ["--login-url", "--cookie-file", "--json"];
-
 const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
 
 const flagLabel = (name, option) => `--${name}${option.type === "string" ? ` ${option.value}` : ""}`;
@@ -87,6 +85,9 @@ const sessionGlobals = (options) => ({
 export const buildProgram = (dispatch) => {
 	const program = new Command();
 	program
+		.hook("preSubcommand", () => {
+			if (program.opts().clear === true) throw new UsageError(CLEAR_ALONE_MESSAGE);
+		})
 		.name("netsuite-cli")
 		.description("NetSuite timesheet, project and vacation records of the signed-in employee")
 		.enablePositionalOptions()
@@ -100,17 +101,7 @@ export const buildProgram = (dispatch) => {
 		.option("--clear", "Remove the browser profile and the cached session, then exit")
 		.addHelpText(
 			"after",
-			[
-				"",
-				"Usage:",
-				"  netsuite-cli <resource> <verb> [flags]",
-				"  netsuite-cli --clear",
-				"",
-				'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
-				"",
-				"--clear stands alone: it takes no command.",
-				"",
-			].join("\n"),
+			["", "Usage: netsuite-cli <resource> <verb> [flags]", "       netsuite-cli --clear", ""].join("\n"),
 		)
 		.action((options) => {
 			const [resource] = program.args;
@@ -129,6 +120,8 @@ export const buildProgram = (dispatch) => {
 			process.stdout.write(globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
 			return 0;
 		});
+
+	const globalFlags = program.options.map((option) => option.long).filter((flag) => flag !== "--clear");
 
 	for (const [key, command] of Object.entries(commands)) {
 		const [resource, verb] = key.split(" ");
@@ -155,24 +148,6 @@ export const buildProgram = (dispatch) => {
 		});
 	}
 
-	for (const resourceCommand of program.commands) {
-		const resource = resourceCommand.name();
-		const verbs = resourceCommand.commands.map((entry) => entry.name()).join(", ");
-		resourceCommand
-			.addOption(new Option("--clear").hideHelp())
-			.helpCommand(true)
-			.allowExcessArguments(true)
-			.action(() => {
-				const [verb] = resourceCommand.args;
-				if (verb !== undefined) {
-					throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbs}`);
-				}
-				if (program.opts().clear === true || resourceCommand.opts().clear === true) {
-					throw new UsageError(CLEAR_ALONE_MESSAGE);
-				}
-				throw new UsageError(`missing the verb for "${resource}"; available: ${verbs}`);
-			});
-	}
 	program.allowExcessArguments(true);
 
 	return program;
