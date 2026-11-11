@@ -1,5 +1,4 @@
-import { chmodSync, existsSync, readlinkSync, writeFileSync } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { access, chmod, mkdir, readlink, stat, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { create, extract, list } from "tar";
@@ -8,7 +7,7 @@ import { UsageError } from "./errors.mjs";
 
 const SESSION_FILE_NAME = "session.json";
 
-const ARCHIVE_EXCLUDES = [
+const ARCHIVE_EXCLUDES = new Set([
 	"Cache",
 	"Code Cache",
 	"GPUCache",
@@ -25,9 +24,9 @@ const ARCHIVE_EXCLUDES = [
 	"SingletonCookie",
 	"SingletonLock",
 	"SingletonSocket",
-];
+]);
 
-const isExcludedMember = (member) => member.split("/").some((name) => ARCHIVE_EXCLUDES.includes(name));
+const isExcludedMember = (member) => member.split("/").some((name) => ARCHIVE_EXCLUDES.has(name));
 
 const listArchiveMembers = async (archive) => {
 	try {
@@ -39,10 +38,10 @@ const listArchiveMembers = async (archive) => {
 	}
 };
 
-const lockOwner = (profileDirectory) => {
+const lockOwner = async (profileDirectory) => {
 	let target;
 	try {
-		target = readlinkSync(join(profileDirectory, "SingletonLock"));
+		target = await readlink(join(profileDirectory, "SingletonLock"));
 	} catch {
 		return null;
 	}
@@ -60,15 +59,16 @@ const isProcessAlive = (pid) => {
 	}
 };
 
-const isProfileLocked = (profileDirectory) => {
-	const owner = lockOwner(profileDirectory);
+const isProfileLocked = async (profileDirectory) => {
+	const owner = await lockOwner(profileDirectory);
 	if (owner === null) return false;
 	if (owner.host !== hostname()) return false;
 	return isProcessAlive(owner.pid);
 };
 
-const assertProfileIsFree = (profileDirectory) => {
-	if (!isProfileLocked(profileDirectory)) return;
+const assertProfileIsFree = async (profileDirectory) => {
+	const locked = await isProfileLocked(profileDirectory);
+	if (!locked) return;
 	throw new UsageError(
 		`Chrome is using the login profile at ${profileDirectory}. Close every Chrome window that uses it and run the command again.`,
 	);
@@ -81,22 +81,31 @@ const archivePathOf = (archivePath) => {
 	return resolve(archivePath);
 };
 
+const pathExists = async (path) => {
+	try {
+		await access(path);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
 export const exportProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECTORY } = {}) => {
 	const profileDirectory = join(cacheDirectory, BROWSER_PROFILE_DIRECTORY_NAME);
-	if (!existsSync(profileDirectory)) {
+	if (!(await pathExists(profileDirectory))) {
 		throw new Error('There is no browser profile to export yet. Sign in first with "netsuite-cli login <url>".');
 	}
-	assertProfileIsFree(profileDirectory);
+	await assertProfileIsFree(profileDirectory);
 
 	const archive = archivePathOf(archivePath);
-	if (!existsSync(dirname(archive))) {
+	if (!(await pathExists(dirname(archive)))) {
 		throw new Error(`The directory ${dirname(archive)} does not exist.`);
 	}
 
 	const members = [BROWSER_PROFILE_DIRECTORY_NAME];
-	if (existsSync(join(cacheDirectory, SESSION_FILE_NAME))) members.push(SESSION_FILE_NAME);
-	writeFileSync(archive, "", { mode: 0o600 });
-	chmodSync(archive, 0o600);
+	if (await pathExists(join(cacheDirectory, SESSION_FILE_NAME))) members.push(SESSION_FILE_NAME);
+	await writeFile(archive, "", { mode: 0o600 });
+	await chmod(archive, 0o600);
 	await create(
 		{
 			gzip: true,
@@ -115,10 +124,10 @@ export const exportProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECTORY, force = false } = {}) => {
 	const profileDirectory = join(cacheDirectory, BROWSER_PROFILE_DIRECTORY_NAME);
 	const sessionPath = join(cacheDirectory, SESSION_FILE_NAME);
-	assertProfileIsFree(profileDirectory);
+	await assertProfileIsFree(profileDirectory);
 
 	const archive = archivePathOf(archivePath);
-	if (!existsSync(archive)) {
+	if (!(await pathExists(archive))) {
 		throw new Error(`There is no archive at ${archive}.`);
 	}
 
@@ -134,7 +143,8 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 		throw new Error(`The archive ${archive} holds no browser profile.`);
 	}
 
-	if (!force && (existsSync(profileDirectory) || existsSync(sessionPath))) {
+	const occupied = (await pathExists(profileDirectory)) || (await pathExists(sessionPath));
+	if (!force && occupied) {
 		throw new UsageError(
 			`Nothing was imported. ${cacheDirectory} already holds a browser profile or a cached session; re-run with --force to replace it.`,
 		);
@@ -154,7 +164,8 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 	} catch (error) {
 		throw new Error(`The archive ${archive} could not be read: ${error.message}`);
 	}
-	if (existsSync(sessionPath)) chmodSync(sessionPath, 0o600);
+	const session = await pathExists(sessionPath);
+	if (session) await chmod(sessionPath, 0o600);
 
-	return { archive, profile: profileDirectory, session: existsSync(sessionPath) };
+	return { archive, profile: profileDirectory, session };
 };
