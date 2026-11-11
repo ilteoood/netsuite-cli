@@ -1,7 +1,8 @@
 import { mkdir } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
 import puppeteer from "puppeteer";
-import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
+import { BROWSER_PROFILE_DIRECTORY, LOGIN_COOKIE_PATH } from "./cache.mjs";
+import { rememberLoginCookies, restoreLoginCookies } from "./login-cookies.mjs";
 
 const LOGIN_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 2000;
@@ -56,6 +57,8 @@ export const loginForSessionCookie = async (options = {}) => {
 		);
 	}
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
+	const loginCookiesPath = options.loginCookiesPath ?? LOGIN_COOKIE_PATH;
+	const launch = options.launch ?? ((launchOptions) => puppeteer.launch(launchOptions));
 	await mkdir(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 	const validate = options.validate ?? (() => true);
@@ -64,7 +67,7 @@ export const loginForSessionCookie = async (options = {}) => {
 
 	let browser;
 	try {
-		browser = await puppeteer.launch({
+		browser = await launch({
 			userDataDir: profileDirectory,
 			headless: false,
 			args: ["--no-first-run", "--no-default-browser-check"],
@@ -77,13 +80,16 @@ export const loginForSessionCookie = async (options = {}) => {
 
 	try {
 		const page = await browser.newPage();
+		await restoreLoginCookies(browser, { path: loginCookiesPath });
 		await page.goto(loginUrl, { waitUntil: "domcontentloaded" }).catch(() => {});
 		const deadline = Date.now() + timeoutMs;
 		while (Date.now() < deadline) {
 			const account = options.account ?? accountFromHost(page.url());
 			if (account && isAccountHost(page.url(), account)) {
-				for (const candidate of pickSessionCookieCandidates(await readSessionCookies(browser), account)) {
+				const cookies = await readSessionCookies(browser);
+				for (const candidate of pickSessionCookieCandidates(cookies, account)) {
 					if (await validate(`JSESSIONID=${candidate}`, account)) {
+						rememberLoginCookies(cookies, { path: loginCookiesPath });
 						return { cookieHeader: `JSESSIONID=${candidate}`, account };
 					}
 				}

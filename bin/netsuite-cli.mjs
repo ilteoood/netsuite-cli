@@ -66,7 +66,7 @@ const commands = {
 		},
 	},
 	"profile export": {
-		summary: "Export the login browser profile and the cached session to an archive",
+		summary: "Export the login browser profile, the cached session and the login cookies to an archive",
 		argument: { name: "path", value: "<path>" },
 		flags: {},
 	},
@@ -110,7 +110,10 @@ export const buildProgram = (dispatch) => {
 		})
 		.option("--cookie-file <path>", "Read the session cookie from a file, no browser")
 		.option("--json", "Print the result as JSON")
-		.option("--clear", "Remove the browser profile, the cached session and the stored login page, then exit")
+		.option(
+			"--clear",
+			"Remove the browser profile, the cached session, the login cookies and the stored login page, then exit",
+		)
 		.addHelpText(
 			"after",
 			[
@@ -132,7 +135,7 @@ export const buildProgram = (dispatch) => {
 			}
 			const { removed, directory } = clearCache();
 			const summary = removed
-				? `Removed ${directory} and its contents (browser profile, cached session and login page)`
+				? `Removed ${directory} and its contents (browser profile, cached session, login cookies and login page)`
 				: `Nothing to remove in ${directory}`;
 			const globals = sessionGlobals(options);
 			process.stdout.write(globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
@@ -320,12 +323,18 @@ const handlers = {
 		);
 	},
 	"profile import": async ({ globals, flags }) => {
-		const { archive, profile, session } = await importProfile({ archivePath: flags.path, force: flags.force });
-		const sessionNote = session === true ? " and the cached session" : "";
+		const { archive, profile, session, loginCookies } = await importProfile({
+			archivePath: flags.path,
+			force: flags.force,
+		});
+		const restored = [session === true && "the cached session", loginCookies === true && "the login cookies"].filter(
+			(entry) => entry !== false,
+		);
+		const restoredNote = restored.length === 0 ? "" : ` and ${restored.join(" and ")}`;
 		process.stdout.write(
 			globals.json
-				? `${formatJson({ archive, profile, session })}\n`
-				: `Imported the browser profile into ${profile}${sessionNote}\n`,
+				? `${formatJson({ archive, profile, session, loginCookies })}\n`
+				: `Imported the browser profile into ${profile}${restoredNote}\n`,
 		);
 	},
 };

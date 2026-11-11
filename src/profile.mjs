@@ -2,10 +2,14 @@ import { access, chmod, mkdir, readlink, stat, writeFile } from "node:fs/promise
 import { hostname } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { create, extract, list } from "tar";
-import { BROWSER_PROFILE_DIRECTORY_NAME, CACHE_DIRECTORY, clearCache } from "./cache.mjs";
+import {
+	BROWSER_PROFILE_DIRECTORY_NAME,
+	CACHE_DIRECTORY,
+	clearCache,
+	LOGIN_COOKIE_FILE_NAME,
+	SESSION_FILE_NAME,
+} from "./cache.mjs";
 import { UsageError } from "./errors.mjs";
-
-const SESSION_FILE_NAME = "session.json";
 
 const ARCHIVE_EXCLUDES = new Set([
 	"Cache",
@@ -103,7 +107,9 @@ export const exportProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 	}
 
 	const members = [BROWSER_PROFILE_DIRECTORY_NAME];
-	if (await pathExists(join(cacheDirectory, SESSION_FILE_NAME))) members.push(SESSION_FILE_NAME);
+	for (const name of [SESSION_FILE_NAME, LOGIN_COOKIE_FILE_NAME]) {
+		if (await pathExists(join(cacheDirectory, name))) members.push(name);
+	}
 	await writeFile(archive, "", { mode: 0o600 });
 	await chmod(archive, 0o600);
 	await create(
@@ -124,6 +130,7 @@ export const exportProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECTORY, force = false } = {}) => {
 	const profileDirectory = join(cacheDirectory, BROWSER_PROFILE_DIRECTORY_NAME);
 	const sessionPath = join(cacheDirectory, SESSION_FILE_NAME);
+	const loginCookiePath = join(cacheDirectory, LOGIN_COOKIE_FILE_NAME);
 	await assertProfileIsFree(profileDirectory);
 
 	const archive = archivePathOf(archivePath);
@@ -136,17 +143,19 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 		member === BROWSER_PROFILE_DIRECTORY_NAME ||
 		(member.startsWith(`${BROWSER_PROFILE_DIRECTORY_NAME}/`) && !member.split("/").includes(".."));
 	const isSessionMember = (member) => member === SESSION_FILE_NAME;
-	if (members.some((member) => !isProfileMember(member) && !isSessionMember(member))) {
+	const isLoginCookieMember = (member) => member === LOGIN_COOKIE_FILE_NAME;
+	if (members.some((member) => !isProfileMember(member) && !isSessionMember(member) && !isLoginCookieMember(member))) {
 		throw new Error(`The archive ${archive} is not a netsuite-cli profile archive.`);
 	}
 	if (!members.some(isProfileMember)) {
 		throw new Error(`The archive ${archive} holds no browser profile.`);
 	}
 
-	const occupied = (await pathExists(profileDirectory)) || (await pathExists(sessionPath));
+	const occupied =
+		(await pathExists(loginCookiePath)) || (await pathExists(profileDirectory)) || (await pathExists(sessionPath));
 	if (!force && occupied) {
 		throw new UsageError(
-			`Nothing was imported. ${cacheDirectory} already holds a browser profile or a cached session; re-run with --force to replace it.`,
+			`Nothing was imported. ${cacheDirectory} already holds a browser profile, a cached session or login cookies; re-run with --force to replace it.`,
 		);
 	}
 
@@ -165,7 +174,10 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 		throw new Error(`The archive ${archive} could not be read: ${error.message}`);
 	}
 	const session = await pathExists(sessionPath);
-	if (session) await chmod(sessionPath, 0o600);
+	const loginCookies = await pathExists(loginCookiePath);
+	for (const path of [sessionPath, loginCookiePath]) {
+		if (await pathExists(path)) await chmod(path, 0o600);
+	}
 
-	return { archive, profile: profileDirectory, session };
+	return { archive, profile: profileDirectory, session, loginCookies };
 };

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
 	accountFromHost,
@@ -46,4 +49,41 @@ test("accountFromHost reads the account from the landing url", () => {
 
 test("loginForSessionCookie needs a login url when no account is given", async () => {
 	await assert.rejects(loginForSessionCookie({}), /needs the NetSuite sign-in page/);
+});
+
+test("loginForSessionCookie replays the login cookies before the page and remembers the new ones", async () => {
+	const home = mkdtempSync(join(tmpdir(), "netsuite-browser-login-"));
+	const loginCookiesPath = join(home, "login-cookies.json");
+	writeFileSync(
+		loginCookiesPath,
+		JSON.stringify([{ name: "SID", value: "stored", domain: ".google.com", path: "/", expires: -1 }]),
+	);
+	const events = [];
+	const page = {
+		url: () => "https://1234567.app.netsuite.com/app/center/card.nl",
+		goto: async () => events.push("goto"),
+	};
+	const browser = {
+		newPage: async () => page,
+		setCookie: async (...cookies) => events.push(`replay ${cookies.map((cookie) => cookie.name).join(",")}`),
+		cookies: async () => [
+			{ name: "JSESSIONID", value: "fresh", domain: "1234567.app.netsuite.com", path: "/" },
+			{ name: "SID", value: "rotated", domain: ".google.com", path: "/", expires: -1 },
+		],
+		close: async () => events.push("close"),
+	};
+
+	const session = await loginForSessionCookie({
+		account: "1234567",
+		profileDirectory: join(home, "browser-profile"),
+		loginCookiesPath,
+		launch: async () => browser,
+	});
+
+	assert.deepEqual(session, { cookieHeader: "JSESSIONID=fresh", account: "1234567" });
+	assert.deepEqual(events, ["replay SID", "goto", "close"]);
+	assert.deepEqual(
+		JSON.parse(readFileSync(loginCookiesPath, "utf8")).map((cookie) => cookie.value),
+		["fresh", "rotated"],
+	);
 });

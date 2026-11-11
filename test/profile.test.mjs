@@ -25,7 +25,9 @@ const temporaryHome = () => mkdtempSync(join(tmpdir(), "netsuite-profile-"));
 const cacheOf = (home) => join(home, ".cache", "netsuite-cli");
 const cookieOf = (home) => join(cacheOf(home), "browser-profile", "Default", "Cookies");
 
-const seedProfile = (home, { session = true } = {}) => {
+const loginCookieOf = (home) => join(cacheOf(home), "login-cookies.json");
+
+const seedProfile = (home, { session = true, loginCookies = false } = {}) => {
 	mkdirSync(join(cacheOf(home), "browser-profile", "Default", "Cache"), { recursive: true });
 	writeFileSync(join(cacheOf(home), "browser-profile", "Default", "Cookies"), "cookie-data");
 	writeFileSync(join(cacheOf(home), "browser-profile", "Default", "Cache", "blob"), "throwaway");
@@ -34,6 +36,9 @@ const seedProfile = (home, { session = true } = {}) => {
 			join(cacheOf(home), "session.json"),
 			JSON.stringify({ account: "Acme", cookieHeader: "JSESSIONID=abc" }),
 		);
+	}
+	if (loginCookies === true) {
+		writeFileSync(loginCookieOf(home), JSON.stringify([{ name: "SID", value: "google-session" }]), { mode: 0o600 });
 	}
 };
 
@@ -74,6 +79,24 @@ test("the export works without a cached session and leaves it out of the archive
 	assert.equal(membersOf(archive).includes("session.json"), false);
 });
 
+test("the export archives the login cookies of the machine", () => {
+	const home = temporaryHome();
+	seedProfile(home, { loginCookies: true });
+
+	const archive = exportedArchive(home);
+
+	assert.ok(membersOf(archive).includes("login-cookies.json"));
+});
+
+test("the export leaves the login cookies out when the machine has none", () => {
+	const home = temporaryHome();
+	seedProfile(home);
+
+	const archive = exportedArchive(home);
+
+	assert.equal(membersOf(archive).includes("login-cookies.json"), false);
+});
+
 test("the export refuses when there is no browser profile yet", () => {
 	const home = temporaryHome();
 
@@ -111,6 +134,33 @@ test("the import restores the profile and the session on a machine without one",
 		account: "Acme",
 		cookieHeader: "JSESSIONID=abc",
 	});
+});
+
+test("the import restores the login cookies readable only by the owner", () => {
+	const source = temporaryHome();
+	seedProfile(source, { loginCookies: true });
+	const archive = exportedArchive(source);
+	const target = temporaryHome();
+
+	const result = runIn(target, "profile", "import", archive);
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /and the cached session and the login cookies\n$/);
+	assert.deepEqual(JSON.parse(readFileSync(loginCookieOf(target), "utf8")), [{ name: "SID", value: "google-session" }]);
+	assert.equal(statSync(loginCookieOf(target)).mode & 0o777, 0o600);
+});
+
+test("the import refuses to replace login cookies that are already on the machine", () => {
+	const source = temporaryHome();
+	seedProfile(source, { loginCookies: true });
+	const archive = exportedArchive(source);
+	const target = temporaryHome();
+	seedProfile(target, { session: false, loginCookies: true });
+
+	const refused = runIn(target, "profile", "import", archive);
+
+	assert.equal(refused.status, 1);
+	assert.match(refused.stderr, /^netsuite-cli: Nothing was imported\./);
 });
 
 test("the import refuses to replace a profile without force and replaces it with force", () => {
