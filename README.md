@@ -4,7 +4,7 @@ Command-line client for the NetSuite timesheet and vacation records of the signe
 
 ## Installation
 
-Requires Node.js 26 or newer. A Chrome or Chromium installation is needed for the first sign-in.
+Requires Node.js 26 or newer. `npm install` downloads the Chrome for Testing build that the first sign-in opens.
 
 ```bash
 npm install
@@ -24,7 +24,7 @@ netsuite-cli --login-url 'https://accounts.google.com/o/saml2/initsso?idpid=C00e
 The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600).
 Run `netsuite-cli --clear` to remove the profile and the cached session. The next command needs a browser sign-in again (`--login-url`), because the cached session is the only place the account is kept; a machine that passes a cookie must leave the cookie out for that run.
 
-Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. The browser is located automatically by `chrome-launcher`; set `NETSUITE_BROWSER` to the path of a specific Chrome or Chromium binary when several are installed.
+Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. The browser is the Chrome for Testing build downloaded by `puppeteer`; set `NETSUITE_BROWSER` to the path of a specific Chrome or Chromium binary to use that one instead.
 
 On a machine that cannot open a browser, provide the cookie instead:
 

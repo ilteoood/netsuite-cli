@@ -1,6 +1,5 @@
 import { existsSync, mkdirSync } from "node:fs";
-import { Launcher } from "chrome-launcher";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
 const LOGIN_TIMEOUT_MS = 600000;
@@ -8,30 +7,10 @@ const POLL_INTERVAL_MS = 2000;
 
 const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-const discoverBrowserExecutable = () => {
-	try {
-		return Launcher.getFirstInstallation() ?? null;
-	} catch {
-		try {
-			return Launcher.getInstallations()[0] ?? null;
-		} catch {
-			return null;
-		}
-	}
-};
-
-const findBrowserExecutable = (explicitPath) => {
-	if (explicitPath) {
-		if (!existsSync(explicitPath)) throw new Error(`No browser executable at ${explicitPath}.`);
-		return explicitPath;
-	}
-	const executable = discoverBrowserExecutable();
-	if (!executable) {
-		throw new Error(
-			"No Chrome or Chromium installation found. Set NETSUITE_BROWSER to the browser binary, or provide the session cookie with --cookie-file.",
-		);
-	}
-	return executable;
+const findBrowserExecutable = async (explicitPath) => {
+	if (!explicitPath) return puppeteer.executablePath();
+	if (!existsSync(explicitPath)) throw new Error(`No browser executable at ${explicitPath}.`);
+	return explicitPath;
 };
 
 const sessionRank = (cookie, host) => {
@@ -83,7 +62,7 @@ export const loginForSessionCookie = async (options = {}) => {
 			"Signing in needs loginUrl in the configuration when no account is set, because the account is only known once the browser lands on it.",
 		);
 	}
-	const executable = findBrowserExecutable(options.browserPath ?? process.env.NETSUITE_BROWSER);
+	const executable = await findBrowserExecutable(options.browserPath ?? process.env.NETSUITE_BROWSER);
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	mkdirSync(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
