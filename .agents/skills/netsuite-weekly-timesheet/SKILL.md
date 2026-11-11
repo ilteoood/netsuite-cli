@@ -2,7 +2,7 @@
 
 name: "netsuite-weekly-timesheet"
 description: "Fill, update or submit the weekly NetSuite timesheet of the signed-in account with the netsuite-cli binary, and list or file vacations: \"fill my timesheet\", \"log my hours in NetSuite\", \"submit my timesheet\", \"timesheet for last week\", \"my hours are still empty\"."
-version: 10
+version: 1
 created: "2026-11-09"
 updated: "2026-11-10"
 ---
