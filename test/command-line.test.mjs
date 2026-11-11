@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -278,4 +278,13 @@ test("weekDaysOf turns day names into the dates of the week, defaulting to the w
 	assert.deepEqual(weekDaysOf("2026-11-09"), ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]);
 	assert.deepEqual(weekDaysOf("2026-11-09", "WED, sat"), ["2026-11-11", "2026-11-14"]);
 	assert.throws(() => weekDaysOf("2026-11-09", "mon,funday"), UsageError);
+});
+
+test("the binary runs when it is started through a symlink, as npm and npx do", () => {
+	const directory = mkdtempSync(join(tmpdir(), "netsuite-cli-bin-"));
+	const link = join(directory, "netsuite-cli");
+	symlinkSync(binary, link);
+	const result = spawnSync(process.execPath, [link, "--help"], { encoding: "utf8" });
+	assert.equal(result.status, 0);
+	assert.match(result.stdout, /^Usage: netsuite-cli/);
 });
