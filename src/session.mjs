@@ -72,7 +72,7 @@ export const resolveCookieHeader = async (configuredAccount, options = {}) => {
 	if (provided) {
 		if (!account) {
 			throw new Error(
-				"A cookie was given without an account, so there is no host to send it to. Sign in through the browser once instead.",
+				"A cookie was given without an account, so there is no host to send it to. Pass --login-url and sign in through the browser once instead.",
 			);
 		}
 		await assertSessionIsValid(account, provided);
