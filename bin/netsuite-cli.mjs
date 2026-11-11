@@ -25,7 +25,7 @@ const GLOBALS = {
 
 const STANDALONE_FLAG_NAMES = new Set(["clear"]);
 const globalOptionEntries = Object.entries(GLOBALS).filter(([name]) => !STANDALONE_FLAG_NAMES.has(name));
-const standaloneOptionEntries = Object.entries(GLOBALS).filter(([name]) => STANDALONE_FLAG_NAMES.includes(name));
+const standaloneOptionEntries = Object.entries(GLOBALS).filter(([name]) => STANDALONE_FLAG_NAMES.has(name));
 const globalOptionNames = globalOptionEntries.map(([name]) => name).filter((name) => name !== "help");
 const globalFlagNames = new Set([...globalOptionNames, ...STANDALONE_FLAG_NAMES]);
 
