@@ -23,8 +23,8 @@ const GLOBALS = {
 	help: { type: "boolean", default: false, description: "Show this help" },
 };
 
-const STANDALONE_FLAG_NAMES = ["clear"];
-const globalOptionEntries = Object.entries(GLOBALS).filter(([name]) => !STANDALONE_FLAG_NAMES.includes(name));
+const STANDALONE_FLAG_NAMES = new Set(["clear"]);
+const globalOptionEntries = Object.entries(GLOBALS).filter(([name]) => !STANDALONE_FLAG_NAMES.has(name));
 const standaloneOptionEntries = Object.entries(GLOBALS).filter(([name]) => STANDALONE_FLAG_NAMES.includes(name));
 const globalOptionNames = globalOptionEntries.map(([name]) => name).filter((name) => name !== "help");
 const globalFlagNames = new Set([...globalOptionNames, ...STANDALONE_FLAG_NAMES]);
