@@ -126,16 +126,16 @@ export const buildProgram = (dispatch) => {
 			return 0;
 		});
 
+	const globalFlags = program.options.map((option) => option.long).filter((flag) => flag !== "--clear");
+
 	program
 		.command("login [url]")
 		.description("Store the NetSuite sign-in page and sign in through the browser")
 		.addHelpText(
 			"after",
-			'\nThe URL is required the first time and after "--clear"; later runs reuse the stored one.\n',
+			`\nThe URL is required the first time and after "--clear"; later runs reuse the stored one.\nThe global flags go before it: ${globalFlags.join(", ")}.\n`,
 		)
 		.action((url) => dispatch({ key: "login", flags: { url: url ?? null }, globals: sessionGlobals(program.opts()) }));
-
-	const globalFlags = program.options.map((option) => option.long).filter((flag) => flag !== "--clear");
 
 	for (const [key, command] of Object.entries(commands)) {
 		const [resource, verb] = key.split(" ");
@@ -225,7 +225,7 @@ const handlers = {
 		if (globals.cookieFile !== null) {
 			throw new UsageError('"login" signs in through the browser, so it cannot be combined with "--cookie-file"');
 		}
-		const loginUrl = flags.url === null ? storedLoginUrl() : flags.url;
+		const loginUrl = flags.url ?? storedLoginUrl();
 		if (loginUrl === null) {
 			throw new UsageError('login has no stored sign-in page yet; pass it: "netsuite-cli login <url>"');
 		}
