@@ -103,6 +103,16 @@ test("resolveCookieHeader signs in with the cached account when no login page is
 	}
 });
 
+test("storedLoginUrl ignores a stored page that is not an https url", () => {
+	mkdirSync(dirname(SESSION_CACHE_PATH), { recursive: true });
+	writeFileSync(
+		SESSION_CACHE_PATH,
+		JSON.stringify({ account: "1234567", cookieHeader: "JSESSIONID=abc", loginUrl: "file:///tmp/x" }),
+	);
+
+	assert.equal(storedLoginUrl(), null);
+});
+
 test("clearCache removes the cache directory and reports whether it existed", () => {
 	const directory = join(mkdtempSync(join(tmpdir(), "netsuite-clear-")), "netsuite-cli");
 	mkdirSync(join(directory, "browser-profile"), { recursive: true });
