@@ -6,6 +6,7 @@ import { clearCache, SESSION_CACHE_PATH } from "../src/cache.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { resolveActivity, resolveLeaveType } from "../src/labels.mjs";
 import { formatJson, formatTable } from "../src/output.mjs";
+import { exportProfile, importProfile } from "../src/profile.mjs";
 import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
 import { isNetsuiteLoginUrl, loginThroughBrowser, storedLoginUrl } from "../src/session.mjs";
@@ -64,12 +65,25 @@ const commands = {
 			memo: { type: "string", value: "<text>", description: "Memo (default: the task name)" },
 		},
 	},
+	"profile export": {
+		summary: "Export the login browser profile and the cached session to an archive",
+		argument: { name: "path", value: "<path>" },
+		flags: {},
+	},
+	"profile import": {
+		summary: "Import a browser profile archive exported by this CLI",
+		argument: { name: "path", value: "<path>" },
+		flags: {
+			force: { type: "boolean", description: "Replace the browser profile already on this machine" },
+		},
+	},
 };
 
 const resourceSummaries = {
 	projects: "Projects available for the timesheet",
 	vacations: "Absences and leave types",
 	timesheet: "Timesheet entries",
+	profile: "Login browser profile",
 };
 
 const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
@@ -153,12 +167,19 @@ export const buildProgram = (dispatch) => {
 		if (required.length > 0) leaf.usage(`${required.join(" ")} [options]`);
 		leaf.addOption(new Option("--clear").hideHelp());
 		leaf.addHelpText("after", `\nGlobal flags go before the resource: ${globalFlags.join(", ")}.\n`);
-		leaf.action((options) => {
+		const run = (options, values) => {
 			if (program.opts().clear === true || options.clear === true) {
 				throw new UsageError(CLEAR_ALONE_MESSAGE);
 			}
-			return dispatch({ key, flags: options, globals: sessionGlobals(program.opts()) });
-		});
+			return dispatch({ key, flags: { ...options, ...values }, globals: sessionGlobals(program.opts()) });
+		};
+		if (command.argument === undefined) {
+			leaf.action((options) => run(options, {}));
+		} else {
+			leaf
+				.argument(command.argument.value)
+				.action((value, options) => run(options, { [command.argument.name]: value }));
+		}
 	}
 
 	program.allowExcessArguments(true);
@@ -290,15 +311,33 @@ const handlers = {
 			globals.json ? `${formatJson(created)}\n` : `Created ${created.reference} (id ${created.id})\n`,
 		);
 	},
+	"profile export": async ({ globals, flags }) => {
+		const { archive, bytes } = await exportProfile({ archivePath: flags.path });
+		process.stdout.write(
+			globals.json
+				? `${formatJson({ archive, bytes })}\n`
+				: `Exported the browser profile to ${archive} (${bytes} bytes)\n`,
+		);
+	},
+	"profile import": async ({ globals, flags }) => {
+		const { archive, profile, session } = await importProfile({ archivePath: flags.path, force: flags.force });
+		const sessionNote = session === true ? " and the cached session" : "";
+		process.stdout.write(
+			globals.json
+				? `${formatJson({ archive, profile, session })}\n`
+				: `Imported the browser profile into ${profile}${sessionNote}\n`,
+		);
+	},
 };
+
+const SESSION_FREE_COMMANDS = new Set(["login", "profile export", "profile import"]);
 
 const runCommand = async ({ key, flags, globals }) => {
 	const handler = handlers[key];
 	if (handler === undefined) {
 		throw new UsageError(`"${key}" is not implemented yet`);
 	}
-	if (key === "login") return (await handler({ globals, flags })) ?? 0;
-
+	if (SESSION_FREE_COMMANDS.has(key)) return (await handler({ globals, flags })) ?? 0;
 	const { createClient } = await import("../src/client.mjs");
 	const client = await createClient(globals);
 	return (await handler({ client, globals, flags })) ?? 0;

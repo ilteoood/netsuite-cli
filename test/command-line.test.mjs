@@ -94,7 +94,7 @@ test("the binary prints the usage on --help and exits 0", () => {
 
 test("the binary lists the resources and the global flags on the root help", () => {
 	const result = run("--help");
-	for (const resource of ["projects", "vacations", "timesheet"]) {
+	for (const resource of ["projects", "vacations", "timesheet", "profile"]) {
 		assert.match(result.stdout, new RegExp(resource));
 	}
 	assert.match(result.stdout, / {7}netsuite-cli login \[url\]/);
@@ -126,7 +126,7 @@ test("the binary names the available resources when the resource is unknown", ()
 	assert.equal(result.status, 1);
 	assert.match(
 		result.stderr,
-		/^netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet/,
+		/^netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet, profile/,
 	);
 });
 

@@ -74,6 +74,8 @@ The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, be
 | `vacations create` | Create a vacation request                     |
 | `timesheet fill`   | Fill a week of the timesheet with one project |
 | `timesheet add`    | Add one row to the timesheet of a date        |
+| `profile export`   | Export the login browser profile              |
+| `profile import`   | Import a browser profile archive              |
 
 ### `projects list`
 
@@ -180,6 +182,34 @@ Wrote 1 created, 0 replaced, 0 removed, 42:00 in the week of 2026-11-09
 
 If a row for the same date, project and task already exists with different hours or memo, it is replaced. Other rows are left alone.
 
+### `profile export`
+
+Packs the shared Chrome profile and the cached session into a `tar.gz` archive, so a sign-in that happened on one machine can be reused on another. The path is the archive to write.
+
+```bash
+netsuite-cli profile export ~/netsuite-profile.tar.gz
+```
+
+```text
+Exported the browser profile to /home/user/netsuite-profile.tar.gz (28457344 bytes)
+```
+
+The archive holds the live session cookie, so it is written readable only by you (mode 600) and has to be moved like a credential. The throwaway Chrome caches are left out of it.
+
+### `profile import`
+
+Restores an archive exported by `profile export` into `~/.cache/netsuite-cli`, so the next command signs in without a browser. The path is the archive to read.
+
+```bash
+netsuite-cli profile import ~/netsuite-profile.tar.gz
+```
+
+```text
+Imported the browser profile into /home/user/.cache/netsuite-cli/browser-profile and the cached session
+```
+
+An archive that was not produced by this CLI is refused. A profile that is already on the machine is kept unless `--force` is given.
+
 ## Invariants
 
 - `--week` must be the Monday of the week, in `YYYY-MM-DD`. The current week is the default.
@@ -194,5 +224,7 @@ If a row for the same date, project and task already exists with different hours
 - `--json` must be a global flag, before the resource. Commands print a JSON array or object instead of a table or a sentence.
 - `--clear` stands alone: it removes the cache and exits, and cannot be combined with a command.
 - `login` signs in through the browser and stores the sign-in page in the cache; later sign-ins reuse it, so the URL is only passed the first time and after `--clear`.
+- `profile export` and `profile import` move the browser profile and the cached session. The archive holds a live session cookie, so it is written mode 600 and has to be moved like a credential.
+- Both profile verbs refuse to run while a Chrome window holds the profile, and `profile import` refuses to replace a profile that is already on the machine unless `--force` is given.
 
 Errors are written to stderr as `netsuite-cli: …`. A usage error exits with status 1, and a NetSuite or session failure exits with status 2.
