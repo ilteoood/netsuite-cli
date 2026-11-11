@@ -1,16 +1,10 @@
-import { existsSync, mkdirSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { setTimeout } from "node:timers/promises";
 import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
 const LOGIN_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 2000;
-
-const findBrowserExecutable = async (explicitPath) => {
-	if (!explicitPath) return puppeteer.executablePath();
-	if (!existsSync(explicitPath)) throw new Error(`No browser executable at ${explicitPath}.`);
-	return explicitPath;
-};
 
 const sessionRank = (cookie, host) => {
 	const onAccountHost = cookie.domain === host || cookie.domain === `.${host}`;
@@ -61,7 +55,7 @@ export const loginForSessionCookie = async (options = {}) => {
 			"Signing in needs loginUrl in the configuration when no account is set, because the account is only known once the browser lands on it.",
 		);
 	}
-	const executable = await findBrowserExecutable(options.browserPath ?? process.env.NETSUITE_BROWSER);
+	const browserPath = options.browserPath ?? process.env.NETSUITE_BROWSER;
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	mkdirSync(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
@@ -69,12 +63,10 @@ export const loginForSessionCookie = async (options = {}) => {
 	const loginUrl =
 		options.loginUrl ?? `https://${options.account}.app.netsuite.com/app/accounting/transactions/weeklytimelist.nl`;
 
-	options.onLoginStart?.(executable);
-
 	let browser;
 	try {
 		browser = await puppeteer.launch({
-			executablePath: executable,
+			executablePath: browserPath,
 			userDataDir: profileDirectory,
 			headless: false,
 			args: ["--no-first-run", "--no-default-browser-check"],
@@ -94,7 +86,7 @@ export const loginForSessionCookie = async (options = {}) => {
 			if (account && isAccountHost(page.url(), account)) {
 				for (const candidate of pickSessionCookieCandidates(await readSessionCookies(browser), account)) {
 					if (await validate(`JSESSIONID=${candidate}`, account)) {
-						return { cookieHeader: `JSESSIONID=${candidate}`, executable, account };
+						return { cookieHeader: `JSESSIONID=${candidate}`, account };
 					}
 				}
 			}
