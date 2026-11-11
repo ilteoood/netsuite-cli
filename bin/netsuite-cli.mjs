@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { pathToFileURL } from "node:url";
 import { Command, CommanderError, Option } from "commander";
 import { parseISO } from "date-fns/parseISO";
 import { createAbsence, listAbsences } from "../src/absences.mjs";
@@ -329,6 +328,6 @@ export const main = async (argv) => {
 	}
 };
 
-if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url) {
+if (import.meta.main) {
 	process.exitCode = await main(process.argv.slice(2));
 }
