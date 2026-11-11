@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
-import { parseArgs } from "node:util";
+import { Command, CommanderError, Option } from "commander";
 import { parseISO } from "date-fns/parseISO";
 import { createAbsence, listAbsences } from "../src/absences.mjs";
 import { clearCache } from "../src/cache.mjs";
@@ -10,26 +10,6 @@ import { formatJson, formatTable } from "../src/output.mjs";
 import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
 import { addTimeEntry, fillTimesheet } from "../src/timesheet.mjs";
-
-const GLOBALS = {
-	"login-url": { type: "string", value: "<url>", description: "NetSuite login page the browser opens" },
-	"cookie-file": { type: "string", value: "<path>", description: "Read the session cookie from a file, no browser" },
-	json: { type: "boolean", default: false, description: "Print the result as JSON" },
-	clear: {
-		type: "boolean",
-		default: false,
-		description: "Remove the browser profile and the cached session, then exit",
-	},
-	help: { type: "boolean", default: false, description: "Show this help" },
-};
-
-const STANDALONE_FLAG_NAMES = new Set(["clear"]);
-const globalOptionEntries = Object.entries(GLOBALS).filter(([name]) => !STANDALONE_FLAG_NAMES.has(name));
-const standaloneOptionEntries = Object.entries(GLOBALS).filter(([name]) => STANDALONE_FLAG_NAMES.has(name));
-const globalOptionNames = globalOptionEntries.map(([name]) => name).filter((name) => name !== "help");
-const globalFlagNames = new Set([...globalOptionNames, ...STANDALONE_FLAG_NAMES]);
-
-const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
 
 const commands = {
 	"projects list": {
@@ -64,9 +44,9 @@ const commands = {
 				description: "Activity label or id (default: Solution Delivery)",
 			},
 			memo: { type: "string", value: "<text>", description: "Memo (default: the task name)" },
-			"dry-run": { type: "boolean", default: false, description: "Print the plan and write nothing" },
-			force: { type: "boolean", default: false, description: "Write even when the week already has entries" },
-			submit: { type: "boolean", default: false, description: "Submit the timesheet after filling it" },
+			"dry-run": { type: "boolean", description: "Print the plan and write nothing" },
+			force: { type: "boolean", description: "Write even when the week already has entries" },
+			submit: { type: "boolean", description: "Submit the timesheet after filling it" },
 		},
 	},
 	"timesheet add": {
@@ -86,166 +66,116 @@ const commands = {
 	},
 };
 
-const resources = [...new Set(Object.keys(commands).map((key) => key.split(" ")[0]))];
-const verbsOf = (resource) =>
-	Object.keys(commands)
-		.filter((key) => key.startsWith(`${resource} `))
-		.map((key) => key.slice(resource.length + 1));
+const resourceSummaries = {
+	projects: "Projects available for the timesheet",
+	vacations: "Absences and leave types",
+	timesheet: "Timesheet entries",
+};
 
-const parseOptions = (flags) =>
-	Object.fromEntries(
-		Object.entries(flags).map(([name, { type, default: fallback }]) => [
-			name,
-			fallback === undefined ? { type } : { type, default: fallback },
-		]),
-	);
+const globalFlags = ["--login-url", "--cookie-file", "--json"];
+
+const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
 
 const flagLabel = (name, option) => `--${name}${option.type === "string" ? ` ${option.value}` : ""}`;
 
-const splitGlobals = (argv) => {
-	for (let index = 0; index < argv.length; index += 1) {
-		const token = argv[index];
-		if (!token.startsWith("-")) return [argv.slice(0, index), argv.slice(index)];
-		const name = token.split("=")[0].slice(2);
-		if (GLOBALS[name]?.type === "string" && !token.includes("=")) index += 1;
-	}
-	return [argv, []];
-};
+const sessionGlobals = (options) => ({
+	loginUrl: options.loginUrl ?? null,
+	cookieFile: options.cookieFile ?? null,
+	json: options.json ?? false,
+});
 
-const flagNames = (tokens, options) => {
-	const names = [];
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (!token.startsWith("--")) continue;
-		const name = token.split("=")[0].slice(2);
-		names.push(name);
-		if (options[name]?.type === "string" && !token.includes("=")) index += 1;
-	}
-	return names;
-};
+export const buildProgram = (dispatch) => {
+	const program = new Command();
+	program
+		.name("netsuite-cli")
+		.description("NetSuite timesheet, project and vacation records of the signed-in employee")
+		.enablePositionalOptions()
+		.exitOverride()
+		.configureOutput({
+			outputError: (message, write) => write(message.replace(/^error: /, "netsuite-cli: ")),
+		})
+		.option("--login-url <url>", "NetSuite login page the browser opens")
+		.option("--cookie-file <path>", "Read the session cookie from a file, no browser")
+		.option("--json", "Print the result as JSON")
+		.option("--clear", "Remove the browser profile and the cached session, then exit")
+		.addHelpText(
+			"after",
+			[
+				"",
+				"Usage:",
+				"  netsuite-cli <resource> <verb> [flags]",
+				"  netsuite-cli --clear",
+				"",
+				'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
+				"",
+				"--clear stands alone: it takes no command.",
+				"",
+			].join("\n"),
+		)
+		.action((options) => {
+			const [resource] = program.args;
+			if (resource !== undefined) {
+				const available = program.commands.map((entry) => entry.name()).join(", ");
+				throw new UsageError(`unknown resource "${resource}"; available: ${available}`);
+			}
+			if (options.clear !== true) {
+				throw new UsageError('missing the resource; run "netsuite-cli --help" for the command list');
+			}
+			const { removed, directory } = clearCache();
+			const summary = removed
+				? `Removed ${directory} and its contents (browser profile and cached session)`
+				: `Nothing to remove in ${directory}`;
+			const globals = sessionGlobals(options);
+			process.stdout.write(globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
+			return 0;
+		});
 
-const parseStrict = (args, options) => {
-	try {
-		return parseArgs({ args, options, strict: true });
-	} catch (error) {
-		const unknown = error.code === "ERR_PARSE_ARGS_UNKNOWN_OPTION" ? error.message.match(/'(-[^']+)'/)?.[1] : null;
-		throw new UsageError(unknown ? `unknown flag "${unknown}"` : error.message);
-	}
-};
-
-const usageOfFlags = (entries) => {
-	const labels = entries.map(([name, option]) => flagLabel(name, option));
-	const width = Math.max(...labels.map((label) => label.length));
-	return entries.map(([, option], index) => `  ${labels[index].padEnd(width)}  ${option.description}`);
-};
-
-const commandLines = (keys) => {
-	const width = Math.max(...keys.map((key) => key.length));
-	return keys.map((key) => `  ${key.padEnd(width)}  ${commands[key].summary}`);
-};
-
-export const usageText = (target) => {
-	if (target === null) {
-		return [
-			"Usage: netsuite-cli [--login-url <url>] [--cookie-file <path>] [--json] <resource> <verb> [flags]",
-			"       netsuite-cli --clear",
-			"",
-			"Commands:",
-			...commandLines(Object.keys(commands)),
-			"",
-			"Global flags, before the resource:",
-			...usageOfFlags(globalOptionEntries),
-			"",
-			"Standalone flag, with no command:",
-			...usageOfFlags(standaloneOptionEntries),
-			"",
-			'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
-			"",
-		].join("\n");
-	}
-	if (commands[target] === undefined) {
-		const keys = verbsOf(target).map((verb) => `${target} ${verb}`);
-		return [
-			`Usage: netsuite-cli ${target} <verb> [flags]`,
-			"",
-			"Commands:",
-			...commandLines(keys),
-			"",
-			`Run "netsuite-cli ${target} <verb> --help" for the flags of one command.`,
-			"",
-		].join("\n");
-	}
-	const { flags, summary } = commands[target];
-	const required = Object.entries(flags)
-		.filter(([, option]) => option.required)
-		.map(([name, option]) => flagLabel(name, option));
-	const optional = Object.keys(flags).length > required.length;
-	return [
-		[`Usage: netsuite-cli ${target}`, ...required, ...(optional ? ["[flags]"] : [])].join(" "),
-		"",
-		`${summary}.`,
-		"",
-		...(Object.keys(flags).length === 0 ? [] : ["Flags:", ...usageOfFlags(Object.entries(flags)), ""]),
-		`Global flags go before the resource: ${globalOptionNames.map((name) => `--${name}`).join(", ")}.`,
-		"",
-	].join("\n");
-};
-
-export const parseCommandLine = (argv) => {
-	const [globalArguments, rest] = splitGlobals(argv);
-	const { values } = parseStrict(globalArguments, parseOptions(GLOBALS));
-	const globals = {
-		loginUrl: values["login-url"] ?? null,
-		cookieFile: values["cookie-file"] ?? null,
-		json: values.json ?? false,
-	};
-	if (values.help) return { globals, resource: null, verb: null, flags: {}, help: "root" };
-	if (values.clear) {
-		if (rest.length > 0) throw new UsageError(CLEAR_ALONE_MESSAGE);
-		return { globals, resource: null, verb: null, flags: {}, help: null, clear: true };
-	}
-	const [resource, ...afterResource] = rest;
-	if (resource === undefined) {
-		throw new UsageError('missing the resource; run "netsuite-cli --help" for the command list');
-	}
-	if (!resources.includes(resource)) {
-		throw new UsageError(`unknown resource "${resource}"; available: ${resources.join(", ")}`);
-	}
-	const verb = afterResource[0];
-	const command = verb === undefined ? undefined : commands[`${resource} ${verb}`];
-	const names = flagNames(afterResource, command?.flags ?? {});
-	if (names.includes("help")) {
-		const helpVerb = verbsOf(resource).find((name) => name === verb) ?? null;
-		return {
-			globals,
-			resource,
-			verb: helpVerb,
-			flags: {},
-			help: helpVerb === null ? resource : `${resource} ${helpVerb}`,
-		};
-	}
-	const verbFlagName = verb?.startsWith("--") ? verb.split("=")[0].slice(2) : null;
-	const verbIsGlobalFlag = verbFlagName !== null && globalFlagNames.has(verbFlagName);
-	if (verb !== undefined && command === undefined && !verbIsGlobalFlag) {
-		throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
-	}
-	const misplaced = names.find((name) => globalFlagNames.has(name));
-	if (misplaced !== undefined) {
-		throw new UsageError(
-			misplaced === "clear" ? CLEAR_ALONE_MESSAGE : `"--${misplaced}" is a global flag and goes before "${resource}"`,
-		);
-	}
-	if (verb === undefined) {
-		throw new UsageError(`missing the verb for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
-	}
-	const { values: parsedFlags } = parseStrict(afterResource.slice(1), parseOptions(command.flags));
-	const flags = { ...parsedFlags };
-	for (const [name, option] of Object.entries(command.flags)) {
-		if (option.required && flags[name] === undefined) {
-			throw new UsageError(`"${resource} ${verb}" needs ${flagLabel(name, option)}`);
+	for (const [key, command] of Object.entries(commands)) {
+		const [resource, verb] = key.split(" ");
+		const resourceCommand =
+			program.commands.find((entry) => entry.name() === resource) ??
+			program.command(resource).description(resourceSummaries[resource]);
+		const leaf = resourceCommand.command(verb).description(command.summary);
+		for (const [name, option] of Object.entries(command.flags)) {
+			const label = flagLabel(name, option);
+			if (option.required) leaf.requiredOption(label, option.description);
+			else leaf.option(label, option.description, option.default);
 		}
+		const required = Object.entries(command.flags)
+			.filter(([, option]) => option.required)
+			.map(([name, option]) => flagLabel(name, option));
+		if (required.length > 0) leaf.usage(`${required.join(" ")} [options]`);
+		leaf.addOption(new Option("--clear").hideHelp());
+		leaf.addHelpText("after", `\nGlobal flags go before the resource: ${globalFlags.join(", ")}.\n`);
+		leaf.action((options) => {
+			if (program.opts().clear === true || options.clear === true) {
+				throw new UsageError(CLEAR_ALONE_MESSAGE);
+			}
+			return dispatch({ key, flags: options, globals: sessionGlobals(program.opts()) });
+		});
 	}
-	return { globals, resource, verb, flags, help: null };
+
+	for (const resourceCommand of program.commands) {
+		const resource = resourceCommand.name();
+		const verbs = resourceCommand.commands.map((entry) => entry.name()).join(", ");
+		resourceCommand
+			.addOption(new Option("--clear").hideHelp())
+			.helpCommand(true)
+			.allowExcessArguments(true)
+			.action(() => {
+				const [verb] = resourceCommand.args;
+				if (verb !== undefined) {
+					throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbs}`);
+				}
+				if (program.opts().clear === true || resourceCommand.opts().clear === true) {
+					throw new UsageError(CLEAR_ALONE_MESSAGE);
+				}
+				throw new UsageError(`missing the verb for "${resource}"; available: ${verbs}`);
+			});
+	}
+	program.allowExcessArguments(true);
+
+	return program;
 };
 
 const PROJECT_COLUMNS = [
@@ -320,11 +250,11 @@ const handlers = {
 			days: weekDaysOf(weekStart, flags.days),
 			activityId: resolveActivity(flags.activity ?? "71").id,
 			memo: flags.memo ?? task.name,
-			dryRun: flags["dry-run"],
+			dryRun: flags.dryRun,
 			force: flags.force,
 			submit: flags.submit,
 		});
-		writeReport(globals, report, { dryRun: flags["dry-run"] });
+		writeReport(globals, report, { dryRun: flags.dryRun });
 	},
 	"timesheet add": async ({ client, globals, flags }) => {
 		const date = isoDate("date", flags.date);
@@ -356,6 +286,16 @@ const handlers = {
 	},
 };
 
+const runCommand = async ({ key, flags, globals }) => {
+	const handler = handlers[key];
+	if (handler === undefined) {
+		throw new UsageError(`"${key}" is not implemented yet`);
+	}
+	const { createClient } = await import("../src/client.mjs");
+	const client = await createClient(globals);
+	return (await handler({ client, globals, flags })) ?? 0;
+};
+
 export const errorReport = (error) => {
 	if (error instanceof UsageError) return { exitCode: 1, message: error.message };
 	const message =
@@ -369,27 +309,11 @@ export const errorReport = (error) => {
 
 export const main = async (argv) => {
 	try {
-		const command = parseCommandLine(argv);
-		if (command.clear === true) {
-			const { removed, directory } = clearCache();
-			const summary = removed
-				? `Removed ${directory} and its contents (browser profile and cached session)`
-				: `Nothing to remove in ${directory}`;
-			process.stdout.write(command.globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
-			return 0;
-		}
-		if (command.help !== null) {
-			process.stdout.write(usageText(command.help === "root" ? null : command.help));
-			return 0;
-		}
-		const handler = handlers[`${command.resource} ${command.verb}`];
-		if (handler === undefined) {
-			throw new UsageError(`"${command.resource} ${command.verb}" is not implemented yet`);
-		}
-		const { createClient } = await import("../src/client.mjs");
-		const client = await createClient(command.globals);
-		return (await handler({ client, globals: command.globals, flags: command.flags })) ?? 0;
+		const program = buildProgram(runCommand);
+		await program.parseAsync(argv, { from: "user" });
+		return 0;
 	} catch (error) {
+		if (error instanceof CommanderError) return error.exitCode;
 		const { exitCode, message } = errorReport(error);
 		process.stderr.write(`netsuite-cli: ${message}\n`);
 		return exitCode;

@@ -45,11 +45,10 @@ Global flags must come before the resource:
 | `--login-url <url>`    | NetSuite sign-in page to open when a browser sign-in is needed |
 | `--cookie-file <path>` | Read the session cookie from a file, no browser                |
 | `--json`               | Print the result as JSON                                       |
-| `--help`               | Show the command list, or the flags of one command             |
+
+`--help` works anywhere: `netsuite-cli --help` lists the resources, `netsuite-cli <resource> --help` lists the verbs of one resource, and `netsuite-cli <resource> <verb> --help` lists the flags of one command.
 
 `--clear` is a standalone flag: it takes no command and cannot be combined with one.
-
-Run `netsuite-cli <resource> <verb> --help` for the flags of one command.
 
 ## Clearing the profile
 

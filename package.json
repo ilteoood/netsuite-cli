@@ -16,6 +16,7 @@
 	},
 	"dependencies": {
 		"chrome-launcher": "^1.2.3",
+		"commander": "^15.1.0",
 		"date-fns": "^4.4.0",
 		"puppeteer-core": "^25.16.0"
 	},
