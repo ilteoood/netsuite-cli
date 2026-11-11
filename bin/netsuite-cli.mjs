@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { parseISO } from "date-fns/parseISO";
 import { createAbsence, listAbsences } from "../src/absences.mjs";
+import { clearCache } from "../src/cache.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { resolveActivity, resolveLeaveType } from "../src/labels.mjs";
 import { formatJson, formatTable } from "../src/output.mjs";
@@ -17,10 +18,18 @@ const GLOBALS = {
 	clear: {
 		type: "boolean",
 		default: false,
-		description: "Remove the browser profile and the cached session, then exit; it takes no command",
+		description: "Remove the browser profile and the cached session, then exit",
 	},
 	help: { type: "boolean", default: false, description: "Show this help" },
 };
+
+const STANDALONE_FLAG_NAMES = new Set(["clear"]);
+const globalOptionEntries = Object.entries(GLOBALS).filter(([name]) => !STANDALONE_FLAG_NAMES.has(name));
+const standaloneOptionEntries = Object.entries(GLOBALS).filter(([name]) => STANDALONE_FLAG_NAMES.has(name));
+const globalOptionNames = globalOptionEntries.map(([name]) => name).filter((name) => name !== "help");
+const globalFlagNames = new Set([...globalOptionNames, ...STANDALONE_FLAG_NAMES]);
+
+const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
 
 const commands = {
 	"projects list": {
@@ -77,8 +86,6 @@ const commands = {
 	},
 };
 
-const globalFlagNames = new Set(Object.keys(GLOBALS).filter((name) => name !== "help"));
-
 const resources = [...new Set(Object.keys(commands).map((key) => key.split(" ")[0]))];
 const verbsOf = (resource) =>
 	Object.keys(commands)
@@ -105,6 +112,18 @@ const splitGlobals = (argv) => {
 	return [argv, []];
 };
 
+const flagNames = (tokens, options) => {
+	const names = [];
+	for (let index = 0; index < tokens.length; index += 1) {
+		const token = tokens[index];
+		if (!token.startsWith("--")) continue;
+		const name = token.split("=")[0].slice(2);
+		names.push(name);
+		if (options[name]?.type === "string" && !token.includes("=")) index += 1;
+	}
+	return names;
+};
+
 const parseStrict = (args, options) => {
 	try {
 		return parseArgs({ args, options, strict: true });
@@ -114,10 +133,10 @@ const parseStrict = (args, options) => {
 	}
 };
 
-const usageOfFlags = (flags) => {
-	const labels = Object.entries(flags).map(([name, option]) => flagLabel(name, option));
+const usageOfFlags = (entries) => {
+	const labels = entries.map(([name, option]) => flagLabel(name, option));
 	const width = Math.max(...labels.map((label) => label.length));
-	return Object.entries(flags).map(([, option], index) => `  ${labels[index].padEnd(width)}  ${option.description}`);
+	return entries.map(([, option], index) => `  ${labels[index].padEnd(width)}  ${option.description}`);
 };
 
 const commandLines = (keys) => {
@@ -135,7 +154,10 @@ export const usageText = (target) => {
 			...commandLines(Object.keys(commands)),
 			"",
 			"Global flags, before the resource:",
-			...usageOfFlags(GLOBALS),
+			...usageOfFlags(globalOptionEntries),
+			"",
+			"Standalone flag, with no command:",
+			...usageOfFlags(standaloneOptionEntries),
 			"",
 			'Run "netsuite-cli <resource> <verb> --help" for the flags of one command.',
 			"",
@@ -163,8 +185,8 @@ export const usageText = (target) => {
 		"",
 		`${summary}.`,
 		"",
-		...(Object.keys(flags).length === 0 ? [] : ["Flags:", ...usageOfFlags(flags), ""]),
-		"Global flags go before the resource: --login-url, --cookie-file, --json.",
+		...(Object.keys(flags).length === 0 ? [] : ["Flags:", ...usageOfFlags(Object.entries(flags)), ""]),
+		`Global flags go before the resource: ${globalOptionNames.map((name) => `--${name}`).join(", ")}.`,
 		"",
 	].join("\n");
 };
@@ -179,8 +201,8 @@ export const parseCommandLine = (argv) => {
 	};
 	if (values.help) return { globals, resource: null, verb: null, flags: {}, help: "root" };
 	if (values.clear) {
-		if (rest.length > 0) throw new UsageError('"--clear" cannot be combined with a command');
-		return { globals, clear: true };
+		if (rest.length > 0) throw new UsageError(CLEAR_ALONE_MESSAGE);
+		return { globals, resource: null, verb: null, flags: {}, help: null, clear: true };
 	}
 	const [resource, ...afterResource] = rest;
 	if (resource === undefined) {
@@ -189,29 +211,34 @@ export const parseCommandLine = (argv) => {
 	if (!resources.includes(resource)) {
 		throw new UsageError(`unknown resource "${resource}"; available: ${resources.join(", ")}`);
 	}
-	if (afterResource.includes("--help")) {
-		const verb = verbsOf(resource).find((name) => name === afterResource[0]) ?? null;
-		return { globals, resource, verb, flags: {}, help: verb === null ? resource : `${resource} ${verb}` };
+	const verb = afterResource[0];
+	const command = verb === undefined ? undefined : commands[`${resource} ${verb}`];
+	const names = flagNames(afterResource, command?.flags ?? {});
+	if (names.includes("help")) {
+		const helpVerb = verbsOf(resource).find((name) => name === verb) ?? null;
+		return {
+			globals,
+			resource,
+			verb: helpVerb,
+			flags: {},
+			help: helpVerb === null ? resource : `${resource} ${helpVerb}`,
+		};
 	}
-	const misplaced = afterResource
-		.map((token) => token.split("=")[0].slice(2))
-		.find((name) => globalFlagNames.has(name));
+	const verbFlagName = verb?.startsWith("--") ? verb.split("=")[0].slice(2) : null;
+	const verbIsGlobalFlag = verbFlagName !== null && globalFlagNames.has(verbFlagName);
+	if (verb !== undefined && command === undefined && !verbIsGlobalFlag) {
+		throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
+	}
+	const misplaced = names.find((name) => globalFlagNames.has(name));
 	if (misplaced !== undefined) {
 		throw new UsageError(
-			misplaced === "clear"
-				? '"--clear" cannot be combined with a command'
-				: `"--${misplaced}" is a global flag and goes before "${resource}"`,
+			misplaced === "clear" ? CLEAR_ALONE_MESSAGE : `"--${misplaced}" is a global flag and goes before "${resource}"`,
 		);
 	}
-	const [verb, ...verbArguments] = afterResource;
 	if (verb === undefined) {
 		throw new UsageError(`missing the verb for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
 	}
-	const command = commands[`${resource} ${verb}`];
-	if (command === undefined) {
-		throw new UsageError(`unknown verb "${verb}" for "${resource}"; available: ${verbsOf(resource).join(", ")}`);
-	}
-	const { values: parsedFlags } = parseStrict(verbArguments, parseOptions(command.flags));
+	const { values: parsedFlags } = parseStrict(afterResource.slice(1), parseOptions(command.flags));
 	const flags = { ...parsedFlags };
 	for (const [name, option] of Object.entries(command.flags)) {
 		if (option.required && flags[name] === undefined) {
@@ -343,11 +370,10 @@ export const errorReport = (error) => {
 export const main = async (argv) => {
 	try {
 		const command = parseCommandLine(argv);
-		if (command.clear) {
-			const { clearCache } = await import("../src/session.mjs");
-			const { removed, directory } = await clearCache();
+		if (command.clear === true) {
+			const { removed, directory } = clearCache();
 			const summary = removed
-				? `Removed ${directory} (browser profile and cached session)`
+				? `Removed ${directory} and its contents (browser profile and cached session)`
 				: `Nothing to remove in ${directory}`;
 			process.stdout.write(command.globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
 			return 0;

@@ -22,7 +22,7 @@ netsuite-cli --login-url 'https://accounts.google.com/o/saml2/initsso?idpid=C00e
 ```
 
 The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600).
-Run `netsuite-cli --clear` to remove the profile and the cached session.
+Run `netsuite-cli --clear` to remove the profile and the cached session. The next command needs a browser sign-in again (`--login-url`), because the cached session is the only place the account is kept; a machine that passes a cookie must leave the cookie out for that run.
 
 Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. The browser is located automatically by `chrome-launcher`; set `NETSUITE_BROWSER` to the path of a specific Chrome or Chromium binary when several are installed.
 
@@ -47,21 +47,23 @@ Global flags must come before the resource:
 | `--json`               | Print the result as JSON                                       |
 | `--help`               | Show the command list, or the flags of one command             |
 
+`--clear` is a standalone flag: it takes no command and cannot be combined with one.
+
 Run `netsuite-cli <resource> <verb> --help` for the flags of one command.
 
 ## Clearing the profile
 
-`--clear` removes the whole `~/.cache/netsuite-cli` directory: the shared Chrome profile and the cached session. Use it when the profile is locked, corrupted, or holds an account that must be forgotten. The flag stands alone and cannot be combined with a command.
+`--clear` removes the whole `~/.cache/netsuite-cli` directory: the shared Chrome profile and the cached session. Use it when the profile is locked, corrupted, or holds an account that must be forgotten. The flag stands alone and cannot be combined with a command. Close every Chrome window first, because a running Chrome keeps writing to the profile while it is being removed.
 
 ```bash
 netsuite-cli --clear
 ```
 
 ```text
-Removed /home/user/.cache/netsuite-cli (browser profile and cached session)
+Removed /home/user/.cache/netsuite-cli and its contents (browser profile and cached session)
 ```
 
-The next command signs in again from a fresh profile.
+The next command signs in again from a fresh profile and needs `--login-url` again, because the cleared cache held the account; a machine that passes a cookie must leave the cookie out for that run.
 
 ## Commands
 
@@ -190,5 +192,6 @@ If a row for the same date, project and task already exists with different hours
 - `--submit` requires a memo on every entry in the timesheet before NetSuite accepts the submission. `timesheet fill` stores the task name as the memo unless `--memo` is given.
 - `vacations create` files a real approval request and refuses to create a range that overlaps any existing non-cancelled vacation of the employee. An end date before the start date is rejected.
 - `--json` must be a global flag, before the resource. Commands print a JSON array or object instead of a table or a sentence.
+- `--clear` stands alone: it removes the cache and exits, and cannot be combined with a command.
 
 Errors are written to stderr as `netsuite-cli: …`. A usage error exits with status 1, and a NetSuite or session failure exits with status 2.

@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "netsuite-session-"));
 
-const { browserHeaders, clearCache, loginThroughBrowser, netsuiteUrl, readCookieHeader } = await import(
-	"../src/session.mjs"
-);
+const permissionsAreEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
 
+const { browserHeaders, loginThroughBrowser, netsuiteUrl, readCookieHeader } = await import("../src/session.mjs");
+const { clearCache, SESSION_CACHE_PATH } = await import("../src/cache.mjs");
 test("netsuiteUrl points at the account host", () => {
 	assert.equal(netsuiteUrl("1234567", "/services/rest"), "https://1234567.app.netsuite.com/services/rest");
 });
@@ -54,15 +54,43 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 	const session = await loginThroughBrowser({ account: "1234567", login });
 
 	assert.deepEqual(session, { account: "1234567", cookieHeader: "JSESSIONID=new" });
-	const cachePath = join(process.env.HOME, ".cache", "netsuite-cli", "session.json");
-	assert.deepEqual(JSON.parse(readFileSync(cachePath, "utf8")), { account: "1234567", cookieHeader: "JSESSIONID=new" });
+	assert.deepEqual(JSON.parse(readFileSync(SESSION_CACHE_PATH, "utf8")), {
+		account: "1234567",
+		cookieHeader: "JSESSIONID=new",
+	});
 });
 
-test("clearCache removes the cache directory and reports whether it existed", async () => {
+test("clearCache removes the cache directory and reports whether it existed", () => {
 	const directory = join(mkdtempSync(join(tmpdir(), "netsuite-clear-")), "netsuite-cli");
 	mkdirSync(join(directory, "browser-profile"), { recursive: true });
 
-	assert.deepEqual(await clearCache({ directory }), { removed: true, directory });
+	assert.deepEqual(clearCache({ directory }), { removed: true, directory });
 	assert.equal(existsSync(directory), false);
-	assert.deepEqual(await clearCache({ directory }), { removed: false, directory });
+	assert.deepEqual(clearCache({ directory }), { removed: false, directory });
+});
+
+test("clearCache refuses a directory that is not a netsuite-cli cache", () => {
+	const directory = join(mkdtempSync(join(tmpdir(), "netsuite-clear-")), "other-app");
+	mkdirSync(directory, { recursive: true });
+
+	assert.throws(() => clearCache({ directory }), /only a netsuite-cli cache directory can be cleared/);
+	assert.equal(existsSync(directory), true);
+});
+
+test("clearCache explains a removal that failed", {
+	skip: permissionsAreEnforced ? false : "the platform does not enforce directory permissions",
+}, () => {
+	const parent = mkdtempSync(join(tmpdir(), "netsuite-clear-"));
+	const directory = join(parent, "netsuite-cli");
+	mkdirSync(directory, { recursive: true });
+	chmodSync(parent, 0o500);
+
+	try {
+		assert.throws(
+			() => clearCache({ directory }),
+			/Could not remove .*: EACCES\. Close every Chrome window and try again\./,
+		);
+	} finally {
+		chmodSync(parent, 0o700);
+	}
 });
