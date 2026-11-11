@@ -4,7 +4,8 @@ import { basename, join } from "node:path";
 
 export const CACHE_DIRECTORY = join(homedir(), ".cache", "netsuite-cli");
 export const SESSION_CACHE_PATH = join(CACHE_DIRECTORY, "session.json");
-export const BROWSER_PROFILE_DIRECTORY = join(CACHE_DIRECTORY, "browser-profile");
+export const BROWSER_PROFILE_DIRECTORY_NAME = "browser-profile";
+export const BROWSER_PROFILE_DIRECTORY = join(CACHE_DIRECTORY, BROWSER_PROFILE_DIRECTORY_NAME);
 
 export const clearCache = ({ directory = CACHE_DIRECTORY } = {}) => {
 	if (basename(directory) !== "netsuite-cli") {
