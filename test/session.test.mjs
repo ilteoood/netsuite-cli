@@ -48,7 +48,7 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 	const login = async (options) => {
 		assert.equal(options.account, "1234567");
 		assert.equal(typeof options.validate, "function");
-		return { account: "1234567", cookieHeader: "JSESSIONID=new", executable: "/chrome" };
+		return { account: "1234567", cookieHeader: "JSESSIONID=new" };
 	};
 
 	const session = await loginThroughBrowser({ account: "1234567", login });

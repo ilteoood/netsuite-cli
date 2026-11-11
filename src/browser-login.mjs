@@ -1,38 +1,10 @@
-import { existsSync, mkdirSync } from "node:fs";
-import { Launcher } from "chrome-launcher";
-import puppeteer from "puppeteer-core";
+import { mkdir } from "node:fs/promises";
+import { setTimeout } from "node:timers/promises";
+import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
-const LOGIN_TIMEOUT_MS = 600000;
+const LOGIN_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 2000;
-
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-const discoverBrowserExecutable = () => {
-	try {
-		return Launcher.getFirstInstallation() ?? null;
-	} catch {
-		try {
-			return Launcher.getInstallations()[0] ?? null;
-		} catch {
-			return null;
-		}
-	}
-};
-
-const findBrowserExecutable = (explicitPath) => {
-	if (explicitPath) {
-		if (!existsSync(explicitPath)) throw new Error(`No browser executable at ${explicitPath}.`);
-		return explicitPath;
-	}
-	const executable = discoverBrowserExecutable();
-	if (!executable) {
-		throw new Error(
-			"No Chrome or Chromium installation found. Set NETSUITE_BROWSER to the browser binary, or provide the session cookie with --cookie-file.",
-		);
-	}
-	return executable;
-};
 
 const sessionRank = (cookie, host) => {
 	const onAccountHost = cookie.domain === host || cookie.domain === `.${host}`;
@@ -83,20 +55,16 @@ export const loginForSessionCookie = async (options = {}) => {
 			"Signing in needs loginUrl in the configuration when no account is set, because the account is only known once the browser lands on it.",
 		);
 	}
-	const executable = findBrowserExecutable(options.browserPath ?? process.env.NETSUITE_BROWSER);
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
-	mkdirSync(profileDirectory, { recursive: true });
+	await mkdir(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 	const validate = options.validate ?? (() => true);
 	const loginUrl =
 		options.loginUrl ?? `https://${options.account}.app.netsuite.com/app/accounting/transactions/weeklytimelist.nl`;
 
-	options.onLoginStart?.(executable);
-
 	let browser;
 	try {
 		browser = await puppeteer.launch({
-			executablePath: executable,
 			userDataDir: profileDirectory,
 			headless: false,
 			args: ["--no-first-run", "--no-default-browser-check"],
@@ -116,11 +84,11 @@ export const loginForSessionCookie = async (options = {}) => {
 			if (account && isAccountHost(page.url(), account)) {
 				for (const candidate of pickSessionCookieCandidates(await readSessionCookies(browser), account)) {
 					if (await validate(`JSESSIONID=${candidate}`, account)) {
-						return { cookieHeader: `JSESSIONID=${candidate}`, executable, account };
+						return { cookieHeader: `JSESSIONID=${candidate}`, account };
 					}
 				}
 			}
-			await delay(POLL_INTERVAL_MS);
+			await setTimeout(POLL_INTERVAL_MS);
 		}
 		throw new Error(
 			"No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
