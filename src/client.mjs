@@ -80,10 +80,10 @@ const perform = async (session, relogin, path, options = {}) => {
 	);
 };
 
-export const createClient = async ({ loginUrl, cookieFile, cookie, login } = {}) => {
+export const createClient = async ({ cookieFile, cookie, login } = {}) => {
 	let session;
 	try {
-		session = await resolveCookieHeader(null, { loginUrl, cookieFile, cookie, login });
+		session = await resolveCookieHeader({ cookieFile, cookie, login });
 	} catch (error) {
 		throw new NetsuiteError(`NetSuite session unavailable: ${error.message}`);
 	}
@@ -91,7 +91,7 @@ export const createClient = async ({ loginUrl, cookieFile, cookie, login } = {})
 	const relogin = async () => {
 		let fresh;
 		try {
-			fresh = await loginThroughBrowser({ account: session.account, loginUrl, login });
+			fresh = await loginThroughBrowser({ account: session.account, login });
 		} catch (error) {
 			throw new NetsuiteError(`The browser sign-in failed, so the session is still expired: ${error.message}`);
 		}

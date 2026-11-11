@@ -3,12 +3,13 @@ import { pathToFileURL } from "node:url";
 import { Command, CommanderError, Option } from "commander";
 import { parseISO } from "date-fns/parseISO";
 import { createAbsence, listAbsences } from "../src/absences.mjs";
-import { clearCache } from "../src/cache.mjs";
+import { clearCache, SESSION_CACHE_PATH } from "../src/cache.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { resolveActivity, resolveLeaveType } from "../src/labels.mjs";
 import { formatJson, formatTable } from "../src/output.mjs";
 import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
+import { isNetsuiteLoginUrl, loginThroughBrowser, storedLoginUrl } from "../src/session.mjs";
 import { addTimeEntry, fillTimesheet } from "../src/timesheet.mjs";
 
 const commands = {
@@ -77,7 +78,6 @@ const CLEAR_ALONE_MESSAGE = '"--clear" cannot be combined with a command';
 const flagLabel = (name, option) => `--${name}${option.type === "string" ? ` ${option.value}` : ""}`;
 
 const sessionGlobals = (options) => ({
-	loginUrl: options.loginUrl ?? null,
 	cookieFile: options.cookieFile ?? null,
 	json: options.json ?? false,
 });
@@ -95,13 +95,18 @@ export const buildProgram = (dispatch) => {
 		.configureOutput({
 			outputError: (message, write) => write(message.replace(/^error: /, "netsuite-cli: ")),
 		})
-		.option("--login-url <url>", "NetSuite login page the browser opens")
 		.option("--cookie-file <path>", "Read the session cookie from a file, no browser")
 		.option("--json", "Print the result as JSON")
-		.option("--clear", "Remove the browser profile and the cached session, then exit")
+		.option("--clear", "Remove the browser profile, the cached session and the stored login page, then exit")
 		.addHelpText(
 			"after",
-			["", "Usage: netsuite-cli <resource> <verb> [flags]", "       netsuite-cli --clear", ""].join("\n"),
+			[
+				"",
+				"Usage: netsuite-cli <resource> <verb> [flags]",
+				"       netsuite-cli login [url]",
+				"       netsuite-cli --clear",
+				"",
+			].join("\n"),
 		)
 		.action((options) => {
 			const [resource] = program.args;
@@ -114,12 +119,21 @@ export const buildProgram = (dispatch) => {
 			}
 			const { removed, directory } = clearCache();
 			const summary = removed
-				? `Removed ${directory} and its contents (browser profile and cached session)`
+				? `Removed ${directory} and its contents (browser profile, cached session and login page)`
 				: `Nothing to remove in ${directory}`;
 			const globals = sessionGlobals(options);
 			process.stdout.write(globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
 			return 0;
 		});
+
+	program
+		.command("login [url]")
+		.description("Store the NetSuite sign-in page and sign in through the browser")
+		.addHelpText(
+			"after",
+			'\nThe URL is required the first time and after "--clear"; later runs reuse the stored one.\n',
+		)
+		.action((url) => dispatch({ key: "login", flags: { url: url ?? null }, globals: sessionGlobals(program.opts()) }));
 
 	const globalFlags = program.options.map((option) => option.long).filter((flag) => flag !== "--clear");
 
@@ -207,6 +221,24 @@ const writeReport = (globals, report, { dryRun = false } = {}) => {
 };
 
 const handlers = {
+	login: async ({ globals, flags }) => {
+		if (globals.cookieFile !== null) {
+			throw new UsageError('"login" signs in through the browser, so it cannot be combined with "--cookie-file"');
+		}
+		const loginUrl = flags.url === null ? storedLoginUrl() : flags.url;
+		if (loginUrl === null) {
+			throw new UsageError('login has no stored sign-in page yet; pass it: "netsuite-cli login <url>"');
+		}
+		if (!isNetsuiteLoginUrl(loginUrl)) {
+			throw new UsageError(`login takes the NetSuite sign-in page as an https URL, not "${loginUrl}"`);
+		}
+		const { account } = await loginThroughBrowser({ loginUrl });
+		process.stdout.write(
+			globals.json
+				? `${formatJson({ account })}\n`
+				: `Signed in to ${account} (session cached in ${SESSION_CACHE_PATH})\n`,
+		);
+	},
 	"projects list": async ({ client, globals }) => {
 		const { projects } = await fetchProjectChoices(client, weekStartOf());
 		write(globals, projects, PROJECT_COLUMNS);
@@ -266,6 +298,8 @@ const runCommand = async ({ key, flags, globals }) => {
 	if (handler === undefined) {
 		throw new UsageError(`"${key}" is not implemented yet`);
 	}
+	if (key === "login") return (await handler({ globals, flags })) ?? 0;
+
 	const { createClient } = await import("../src/client.mjs");
 	const client = await createClient(globals);
 	return (await handler({ client, globals, flags })) ?? 0;

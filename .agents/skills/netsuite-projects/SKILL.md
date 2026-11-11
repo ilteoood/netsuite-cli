@@ -12,8 +12,8 @@ Use when asked which projects the NetSuite timesheet offers, or which project na
 
 1. `netsuite-cli projects list` prints the project names and ids offered by the timesheet page of the current week.
 2. `netsuite-cli --json projects list` prints the same rows as JSON when the caller needs ids without parsing the table.
-3. The session flags are global and go before the resource: `netsuite-cli --cookie-file ~/cookie.txt projects list`, `--login-url <url>`. Without a cookie the CLI opens Chrome on the login page and caches the session in `~/.cache/netsuite-cli/session.json`. The account itself is only known from `--login-url` or from that cache, so a cookie alone is not enough on a machine that never signed in through the browser.
-4. A stuck browser profile is cleared on its own: `netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile and the cached session) and exits. It stands alone and takes no command. Close every Chrome window before running it, and pass `--login-url` on the next command, because the cleared cache held the account; a machine that passes a cookie must leave the cookie out for that run.
+3. The session flags are global and go before the resource: `netsuite-cli --cookie-file ~/cookie.txt projects list`. Without a cookie the CLI opens Chrome on the NetSuite sign-in page and caches the session in `~/.cache/netsuite-cli/session.json`. The account itself is only known from that cache or from `netsuite-cli login <url>`, which signs in on the pasted NetSuite sign-in page and stores it for the later sign-ins, so a cookie alone is not enough on a machine that never signed in through the browser.
+4. A stuck browser profile is cleared on its own: `netsuite-cli --clear` removes `~/.cache/netsuite-cli` (the shared Chrome profile, the cached session and the stored login page) and exits. It stands alone and takes no command. Close every Chrome window before running it, and run `netsuite-cli login <url>` again afterwards, because the cleared cache held the account and the page; a machine that passes a cookie must leave the cookie out for that run.
 
 ## Pitfalls
 

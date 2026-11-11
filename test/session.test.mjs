@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "netsuite-session-"));
 
 const permissionsAreEnforced = process.platform !== "win32" && process.getuid?.() !== 0;
 
-const { browserHeaders, loginThroughBrowser, netsuiteUrl, readCookieHeader } = await import("../src/session.mjs");
+const { browserHeaders, loginThroughBrowser, netsuiteUrl, readCookieHeader, resolveCookieHeader, storedLoginUrl } =
+	await import("../src/session.mjs");
 const { clearCache, SESSION_CACHE_PATH } = await import("../src/cache.mjs");
 test("netsuiteUrl points at the account host", () => {
 	assert.equal(netsuiteUrl("1234567", "/services/rest"), "https://1234567.app.netsuite.com/services/rest");
@@ -57,7 +58,49 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 	assert.deepEqual(JSON.parse(readFileSync(SESSION_CACHE_PATH, "utf8")), {
 		account: "1234567",
 		cookieHeader: "JSESSIONID=new",
+		loginUrl: null,
 	});
+});
+
+test("loginThroughBrowser stores the login page and reuses it on the next sign-in", async () => {
+	const seenLoginUrls = [];
+	const login = async (options) => {
+		seenLoginUrls.push(options.loginUrl);
+		return { account: "1234567", cookieHeader: "JSESSIONID=new" };
+	};
+
+	await loginThroughBrowser({ account: "1234567", loginUrl: "https://example.test/sso", login });
+	await loginThroughBrowser({ account: "1234567", login });
+
+	assert.deepEqual(seenLoginUrls, ["https://example.test/sso", "https://example.test/sso"]);
+	assert.equal(storedLoginUrl(), "https://example.test/sso");
+});
+
+test("resolveCookieHeader signs in with the cached account when no login page is stored", async () => {
+	const originalFetch = globalThis.fetch;
+	const originalCookie = process.env.NETSUITE_COOKIE;
+	globalThis.fetch = async () => {
+		throw new Error("offline");
+	};
+	delete process.env.NETSUITE_COOKIE;
+	let signInOptions = null;
+	const login = async (options) => {
+		signInOptions = options;
+		return { account: "1234567", cookieHeader: "JSESSIONID=fresh" };
+	};
+
+	try {
+		mkdirSync(dirname(SESSION_CACHE_PATH), { recursive: true });
+		writeFileSync(SESSION_CACHE_PATH, JSON.stringify({ account: "1234567", cookieHeader: "JSESSIONID=stale" }));
+		const session = await resolveCookieHeader({ login });
+
+		assert.equal(signInOptions.account, "1234567");
+		assert.equal(signInOptions.loginUrl, null);
+		assert.equal(session.cookieHeader, "JSESSIONID=fresh");
+	} finally {
+		globalThis.fetch = originalFetch;
+		if (originalCookie !== undefined) process.env.NETSUITE_COOKIE = originalCookie;
+	}
 });
 
 test("clearCache removes the cache directory and reports whether it existed", () => {
