@@ -1,11 +1,10 @@
 import { existsSync, mkdirSync } from "node:fs";
+import { setTimeout } from "node:timers/promises";
 import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
-const LOGIN_TIMEOUT_MS = 600000;
+const LOGIN_TIMEOUT_MS = 600_000;
 const POLL_INTERVAL_MS = 2000;
-
-const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 const findBrowserExecutable = async (explicitPath) => {
 	if (!explicitPath) return puppeteer.executablePath();
@@ -99,7 +98,7 @@ export const loginForSessionCookie = async (options = {}) => {
 					}
 				}
 			}
-			await delay(POLL_INTERVAL_MS);
+			await setTimeout(POLL_INTERVAL_MS);
 		}
 		throw new Error(
 			"No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
