@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { setTimeout } from "node:timers/promises";
 import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
@@ -57,7 +57,7 @@ export const loginForSessionCookie = async (options = {}) => {
 	}
 	const browserPath = options.browserPath ?? process.env.NETSUITE_BROWSER;
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
-	mkdirSync(profileDirectory, { recursive: true });
+	await mkdir(profileDirectory, { recursive: true });
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 	const validate = options.validate ?? (() => true);
 	const loginUrl =
