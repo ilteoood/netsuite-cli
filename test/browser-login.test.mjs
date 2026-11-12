@@ -33,13 +33,26 @@ test("loginForSessionCookie launches the browser headless unless a window is ask
 		rmSync(profileDirectory, { recursive: true, force: true });
 	}
 
+	const browserArguments = [
+		"--no-first-run",
+		"--no-default-browser-check",
+		"--disable-dev-shm-usage",
+		"--password-store=basic",
+	];
+
 	assert.deepStrictEqual(
 		{
 			headless: launches[0].headless,
 			userDataDir: launches[0].userDataDir,
 			windowedHeadless: launches[1].headless,
+			arguments: launches.map((launchOptions) => launchOptions.args),
 		},
-		{ headless: true, userDataDir: profileDirectory, windowedHeadless: false },
+		{
+			headless: true,
+			userDataDir: profileDirectory,
+			windowedHeadless: false,
+			arguments: [browserArguments, browserArguments],
+		},
 	);
 });
 

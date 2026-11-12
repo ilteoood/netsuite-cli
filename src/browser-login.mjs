@@ -71,7 +71,7 @@ export const loginForSessionCookie = async (options = {}) => {
 		browser = await puppeteer.launch({
 			userDataDir: profileDirectory,
 			headless,
-			args: ["--no-first-run", "--no-default-browser-check"],
+			args: ["--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--password-store=basic"],
 		});
 	} catch (error) {
 		throw new Error(
