@@ -72,6 +72,7 @@ The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, be
 | `projects list`    | List the projects available for the timesheet |
 | `vacations list`   | List the upcoming vacations                   |
 | `vacations create` | Create a vacation request                     |
+| `timesheet list`   | List the entries of one week of the timesheet |
 | `timesheet fill`   | Fill a week of the timesheet with one project |
 | `timesheet add`    | Add one row to the timesheet of a date        |
 | `profile export`   | Export the login browser profile              |
@@ -141,6 +142,44 @@ Created Annual Leave 2027-01-11 → 2027-01-15 (id 80003)
 ```
 
 The new request is created with status `Approval Requested`. Use `--reference "…"` to set its name explicitly.
+
+### `timesheet list`
+
+Lists every row of one week with the name of its project and task, ordered by date, then the total of the week. `--week` takes the Monday of the week and defaults to the current week.
+
+```bash
+netsuite-cli timesheet list --week 2026-11-09
+```
+
+```text
+Date        Project         Task                   Hours  Memo
+2026-11-09  Acme Platform   Task 2                 7:30   WebPortal
+2026-11-10  Internal Tools  Internal Project Task  2:00   Incident review
+14:30 in the week of 2026-11-09, submitted
+```
+
+`--json` prints the week with its timesheet id, the submitted flag, the total in minutes and the rows:
+
+```json
+{
+	"weekStart": "2026-11-09",
+	"timesheetId": "826406",
+	"submitted": true,
+	"totalMinutes": 870,
+	"entries": [
+		{
+			"id": "70001",
+			"date": "2026-11-09",
+			"projectName": "Acme Platform",
+			"taskName": "Task 2",
+			"hours": "7:30",
+			"memo": "WebPortal"
+		}
+	]
+}
+```
+
+The names come from the timesheet page of the week, so a listing takes a few more requests than a bare query. A project or task the page does not offer is printed as its id.
 
 ### `timesheet fill`
 

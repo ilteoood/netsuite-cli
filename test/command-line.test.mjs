@@ -55,6 +55,24 @@ test("the parser defaults the globals and leaves the flags out", async () => {
 	);
 });
 
+test("the parser sends the week of the timesheet list and leaves it to the command when absent", async () => {
+	const [[chosen], [current]] = await Promise.all([
+		parse(["timesheet", "list", "--week", "2026-11-09"]),
+		parse(["timesheet", "list"]),
+	]);
+
+	assert.deepStrictEqual(
+		[
+			{ key: chosen.key, flags: chosen.flags },
+			{ key: current.key, flags: current.flags },
+		],
+		[
+			{ key: "timesheet list", flags: { week: "2026-11-09" } },
+			{ key: "timesheet list", flags: {} },
+		],
+	);
+});
+
 test("the parser accepts --flag=value", async () => {
 	const [command] = await parse(["--cookie-file=/tmp/cookie.txt", "vacations", "list"]);
 	assert.strictEqual(command.globals.cookieFile, "/tmp/cookie.txt");

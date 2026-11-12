@@ -10,7 +10,7 @@ import { exportProfile, importProfile } from "../src/profile.mjs";
 import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
 import { isNetsuiteLoginUrl, loginThroughBrowser, storedLoginUrl } from "../src/session.mjs";
-import { addTimeEntry, fillTimesheet } from "../src/timesheet.mjs";
+import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
 
 const commands = {
 	"projects list": {
@@ -29,6 +29,12 @@ const commands = {
 			type: { type: "string", value: "<name>", required: true, description: "Leave type, e.g. Annual Leave" },
 			memo: { type: "string", value: "<text>", description: "Memo" },
 			reference: { type: "string", value: "<text>", description: "Reference (default: type and dates)" },
+		},
+	},
+	"timesheet list": {
+		summary: "List the entries of one week of the timesheet",
+		flags: {
+			week: { type: "string", value: "<date>", description: "Monday of the week (default: current week)" },
 		},
 	},
 	"timesheet fill": {
@@ -204,8 +210,26 @@ const VACATION_COLUMNS = [
 	{ header: "Id", value: (vacation) => vacation.id },
 ];
 
+const TIMESHEET_COLUMNS = [
+	{ header: "Date", value: (entry) => entry.date },
+	{ header: "Project", value: (entry) => entry.projectName },
+	{ header: "Task", value: (entry) => entry.taskName },
+	{ header: "Hours", value: (entry) => entry.hours },
+	{ header: "Memo", value: (entry) => entry.memo },
+];
+
 const write = (globals, rows, columns) =>
 	process.stdout.write(`${globals.json ? formatJson(rows) : formatTable(rows, columns)}\n`);
+
+const writeWeek = (globals, week, columns) => {
+	if (globals.json) {
+		process.stdout.write(`${formatJson(week)}\n`);
+		return;
+	}
+	const table = `${formatTable(week.entries, columns)}\n`;
+	const summary = `${formatHours(week.totalMinutes)} in the week of ${week.weekStart}${week.submitted ? ", submitted" : ""}`;
+	process.stdout.write(`${table}${summary}\n`);
+};
 
 const DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -268,6 +292,10 @@ export const handlers = {
 	},
 	"vacations list": async ({ client, globals }) => {
 		write(globals, await listAbsences(client), VACATION_COLUMNS);
+	},
+	"timesheet list": async ({ client, globals, flags }) => {
+		const weekStart = isoDate("week", flags.week) ?? weekStartOf();
+		writeWeek(globals, await listTimesheet(client, weekStart), TIMESHEET_COLUMNS);
 	},
 	"timesheet fill": async ({ client, globals, flags }) => {
 		const weekStart = isoDate("week", flags.week) ?? weekStartOf();
