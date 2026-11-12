@@ -26,5 +26,8 @@
 	],
 	"devDependencies": {
 		"@biomejs/biome": "^2.6.6"
+	},
+	"allowScripts": {
+		"puppeteer": true
 	}
 }
