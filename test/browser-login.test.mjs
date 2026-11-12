@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -30,6 +30,7 @@ test("loginForSessionCookie launches the browser headless unless a window is ask
 		);
 	} finally {
 		puppeteer.launch = originalLaunch;
+		rmSync(profileDirectory, { recursive: true, force: true });
 	}
 
 	assert.equal(launches[0].headless, true);

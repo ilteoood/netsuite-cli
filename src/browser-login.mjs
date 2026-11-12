@@ -4,6 +4,7 @@ import puppeteer from "puppeteer";
 import { BROWSER_PROFILE_DIRECTORY } from "./cache.mjs";
 
 const LOGIN_TIMEOUT_MS = 600_000;
+const HEADLESS_LOGIN_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 2000;
 
 const sessionRank = (cookie, host) => {
@@ -44,7 +45,7 @@ const readSessionCookies = async (browser) => {
 		return await browser.cookies();
 	} catch (error) {
 		throw new Error(
-			`The browser closed before the NetSuite session appeared (${error.message}). Run the command again and leave the browser running until it closes by itself.`,
+			`The browser closed before the NetSuite session appeared (${error.message}). Run the command again and leave it running until the sign-in completes.`,
 		);
 	}
 };
@@ -57,8 +58,8 @@ export const loginForSessionCookie = async (options = {}) => {
 	}
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	await mkdir(profileDirectory, { recursive: true });
-	const headless = options.headless ?? true;
-	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
+	const headless = options.headless !== false;
+	const timeoutMs = options.timeoutMs ?? (headless ? HEADLESS_LOGIN_TIMEOUT_MS : LOGIN_TIMEOUT_MS);
 	const validate = options.validate ?? (() => true);
 	const loginUrl =
 		options.loginUrl ?? `https://${options.account}.app.netsuite.com/app/accounting/transactions/weeklytimelist.nl`;
@@ -72,7 +73,9 @@ export const loginForSessionCookie = async (options = {}) => {
 		});
 	} catch (error) {
 		throw new Error(
-			`The browser could not be started (${error.message}). Close every window that uses the login profile and run the command again.`,
+			/root|sandbox/i.test(error.message)
+				? `The browser could not be started (${error.message}). Set PUPPETEER_DANGEROUS_NO_SANDBOX=true to start Chrome without its sandbox.`
+				: `The browser could not be started (${error.message}). Close every Chrome that uses the login profile and run the command again.`,
 		);
 	}
 
@@ -93,7 +96,7 @@ export const loginForSessionCookie = async (options = {}) => {
 		}
 		throw new Error(
 			headless
-				? 'No signed-in NetSuite session was captured. Run "netsuite-cli login <url>" to sign in with a browser window, then run the command again.'
+				? 'No signed-in NetSuite session was captured. Run "netsuite-cli login" to sign in with a browser window, then run the command again.'
 				: "No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
 		);
 	} finally {
