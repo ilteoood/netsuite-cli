@@ -1,5 +1,6 @@
 import { parseISO } from "date-fns/parseISO";
 import { NetsuiteError, UsageError } from "./errors.mjs";
+import { fetchProjectChoices, fetchTasks } from "./projects.mjs";
 import {
 	buildPlan,
 	formatHours,
@@ -133,6 +134,38 @@ const countsOf = (plan) => ({
 	keep: plan.keep.length,
 	untouched: plan.untouched.length,
 });
+
+const namesOf = (choices) => new Map(choices.map(({ id, name }) => [id, name]));
+
+const named = (names, id) => names.get(id) ?? id;
+
+const byDateThenName = (left, right) =>
+	left.date.localeCompare(right.date) ||
+	left.projectName.localeCompare(right.projectName) ||
+	left.taskName.localeCompare(right.taskName);
+
+const describeEntry = ({ id, date, minutes, memo, customer, caseTaskEvent }, names) => ({
+	id,
+	date,
+	projectName: named(names.projects, customer),
+	taskName: named(names.tasks, caseTaskEvent),
+	hours: formatHours(minutes),
+	memo,
+});
+
+export const listTimesheet = async (client, weekStart) => {
+	const { timesheetId, employeeId, alreadySubmitted, existingEntries } = await readWeek(client, weekStart);
+	const { projects } = await fetchProjectChoices(client, weekStart);
+	const tasks = await fetchTasks(client, { weekStart, employeeId });
+	const names = { projects: namesOf(projects), tasks: namesOf(tasks) };
+	return {
+		weekStart,
+		timesheetId,
+		submitted: alreadySubmitted,
+		totalMinutes: totalMinutesOf(existingEntries),
+		entries: existingEntries.map((entry) => describeEntry(entry, names)).sort(byDateThenName),
+	};
+};
 
 export const fillTimesheet = async (client, options) => {
 	const {

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
-import { addTimeEntry, fillTimesheet } from "../src/timesheet.mjs";
+import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
+
+const fixture = JSON.parse(readFileSync(new URL("./fixtures/timesheet-2026-11-16.json", import.meta.url), "utf8"));
 
 const weekStart = "2026-11-16";
 const project = { id: "1234", name: "Acme Platform" };
@@ -19,6 +22,9 @@ const entryRow = (overrides = {}) => ({
 	...overrides,
 });
 
+const projectsPage = (projects) =>
+	`<html><body>custpage_filtered_projects\\":{\\"name\\":\\"custpage_filtered_projects\\",\\"supplementedOptions\\":${JSON.stringify(projects).replaceAll('"', '\\"')},\\"hasBlankString\\":false</body></html>`;
+
 const clientWith = ({
 	timesheet = { id: "900", employee: "4242" },
 	entries = [],
@@ -26,10 +32,14 @@ const clientWith = ({
 } = {}) => {
 	const calls = [];
 	return {
+		account: "1234567",
 		calls,
 		suiteql: async (query) => {
 			calls.push({ query });
 			return query.includes("FROM timesheet") ? (timesheet ? [timesheet] : []) : entries;
+		},
+		text: async (path) => {
+			return path.includes("weeklytimebill") ? projectsPage(fixture.projects) : JSON.stringify(fixture.tasks);
 		},
 		request: async (path, { method = "GET", body } = {}) => {
 			calls.push({ path, method, body });
@@ -446,4 +456,95 @@ test("fillTimesheet leaves the existing entries in place when NetSuite refuses a
 		writes(client).map(({ path, method }) => `${method} ${path}`),
 		["POST /services/rest/record/v1/timebill"],
 	);
+});
+
+test("listTimesheet names the project and task of every entry, ordered by date", async () => {
+	const client = clientWith({
+		entries: [
+			entryRow({ id: "901", entrydate: "2026-11-17", hours: "8", memo: "WebPortal", casetaskevent: "2002" }),
+			entryRow({ id: "902", entrydate: "2026-11-18", customer: "1240" }),
+			entryRow({ id: "900", customer: "1240" }),
+		],
+	});
+
+	assert.deepStrictEqual(
+		{ week: await listTimesheet(client, weekStart), writes: writeCalls(client) },
+		{
+			week: {
+				weekStart,
+				timesheetId: "900",
+				submitted: false,
+				totalMinutes: 1380,
+				entries: [
+					{
+						id: "900",
+						date: "2026-11-16",
+						projectName: "Internal Tools",
+						taskName: "Internal Project Task",
+						hours: "7:30",
+						memo: "Delivery",
+					},
+					{
+						id: "901",
+						date: "2026-11-17",
+						projectName: "Acme Platform",
+						taskName: "Task 2",
+						hours: "8:00",
+						memo: "WebPortal",
+					},
+					{
+						id: "902",
+						date: "2026-11-18",
+						projectName: "Internal Tools",
+						taskName: "Internal Project Task",
+						hours: "7:30",
+						memo: "Delivery",
+					},
+				],
+			},
+			writes: [],
+		},
+	);
+});
+
+test("listTimesheet keeps the id of a project the week does not offer and reports the submitted flag", async () => {
+	const client = clientWith({
+		timesheet: { id: "900", employee: "4242", custrecord_timesheetsubmitted: "T" },
+		entries: [entryRow({ customer: "9999" })],
+	});
+
+	assert.deepStrictEqual(
+		{ week: await listTimesheet(client, weekStart), writes: writeCalls(client) },
+		{
+			week: {
+				weekStart,
+				timesheetId: "900",
+				submitted: true,
+				totalMinutes: 450,
+				entries: [
+					{
+						id: "501",
+						date: "2026-11-16",
+						projectName: "9999",
+						taskName: "Internal Project Task",
+						hours: "7:30",
+						memo: "Delivery",
+					},
+				],
+			},
+			writes: [],
+		},
+	);
+});
+
+test("listTimesheet reports an empty week with no time in it", async () => {
+	const client = clientWith();
+
+	assert.deepStrictEqual(await listTimesheet(client, weekStart), {
+		weekStart,
+		timesheetId: "900",
+		submitted: false,
+		totalMinutes: 0,
+		entries: [],
+	});
 });
