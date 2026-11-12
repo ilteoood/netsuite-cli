@@ -199,9 +199,7 @@ test("the login command asks for a browser window", async () => {
 		},
 	});
 
-	assert.equal(signIns.length, 1);
-	assert.equal(signIns[0].headless, false);
-	assert.equal(signIns[0].loginUrl, "https://example.test/sso");
+	assert.deepStrictEqual(signIns, [{ loginUrl: "https://example.test/sso", headless: false }]);
 });
 
 test("the binary rejects a login url that is not an https page", () => {

@@ -95,9 +95,7 @@ export const loginForSessionCookie = async (options = {}) => {
 			await setTimeout(POLL_INTERVAL_MS);
 		}
 		throw new Error(
-			headless
-				? 'No signed-in NetSuite session was captured. Run "netsuite-cli login" to sign in with a browser window, then run the command again.'
-				: "No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
+			'No signed-in NetSuite session was captured. Run "netsuite-cli login" to sign in with a browser window, then run the command again.',
 		);
 	} finally {
 		await browser.close();
