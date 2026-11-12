@@ -23,8 +23,8 @@ netsuite-cli login 'https://accounts.google.com/o/saml2/initsso?idpid=C00example
 
 A headful Chrome window opens on that page and waits for you to sign in. The window closes by itself once the session cookie is captured, and the command prints the account it found. The page is stored with the session, so `netsuite-cli login` with no argument opens the stored page again; the URL is only needed the first time and after `--clear`, because it is the only way to learn which account to use. Every other command signs in the same way when the cached session is missing or expired, with no flag to pass, but without a window, so the command works on a machine with no display. That sign-in can only finish while the shared browser profile still holds a live identity-provider session; when it cannot, the command stops and asks for `netsuite-cli login`.
 
-The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600).
-Run `netsuite-cli --clear` to remove the profile, the cached session and the stored login page. The next sign-in needs the page again, because the cleared cache is the only place the account and the page are kept; a machine that passes a cookie must leave the cookie out for that run.
+The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600). The cookies of the identity provider sign-in are cached next to it in `~/.cache/netsuite-cli/login-cookies.json`, also mode 600, and are replayed into the browser on the next sign-in so that the identity provider does not ask for the account again.
+Run `netsuite-cli --clear` to remove the profile, the cached session, the login cookies and the stored login page. The next sign-in needs the page again, because the cleared cache is the only place the account and the page are kept; a machine that passes a cookie must leave the cookie out for that run.
 
 Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. That sign-in runs headless; only `netsuite-cli login` opens a window, because that is the one you do by hand. The browser is the Chrome for Testing build downloaded by `puppeteer`. In a container that runs as root it needs `PUPPETEER_DANGEROUS_NO_SANDBOX=true`, because Chrome refuses to start as root with its sandbox on.
 
@@ -53,14 +53,14 @@ Global flags must come before the resource:
 
 ## Clearing the profile
 
-`--clear` removes the whole `~/.cache/netsuite-cli` directory: the shared Chrome profile, the cached session and the stored login page. Use it when the profile is locked, corrupted, or holds an account that must be forgotten. The flag stands alone and cannot be combined with a command. Close every Chrome window first, because a running Chrome keeps writing to the profile while it is being removed.
+`--clear` removes the whole `~/.cache/netsuite-cli` directory: the shared Chrome profile, the cached session, the login cookies and the stored login page. Use it when the profile is locked, corrupted, or holds an account that must be forgotten. The flag stands alone and cannot be combined with a command. Close every Chrome window first, because a running Chrome keeps writing to the profile while it is being removed.
 
 ```bash
 netsuite-cli --clear
 ```
 
 ```text
-Removed /home/user/.cache/netsuite-cli and its contents (browser profile, cached session and login page)
+Removed /home/user/.cache/netsuite-cli and its contents (browser profile, cached session, login cookies and login page)
 ```
 
 The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, because the cleared cache held the account and the page; a machine that passes a cookie must leave the cookie out for that run.
@@ -184,7 +184,7 @@ If a row for the same date, project and task already exists with different hours
 
 ### `profile export`
 
-Packs the shared Chrome profile and the cached session into a `tar.gz` archive, so a sign-in that happened on one machine can be reused on another. The path is the archive to write.
+Packs the shared Chrome profile, the cached session and the identity provider cookies into a `tar.gz` archive, so a sign-in that happened on one machine can be reused on another. The path is the archive to write.
 
 ```bash
 netsuite-cli profile export ~/netsuite-profile.tar.gz
@@ -196,6 +196,8 @@ Exported the browser profile to /home/user/netsuite-profile.tar.gz (28457344 byt
 
 The archive holds the live session cookie, so it is written readable only by you (mode 600) and has to be moved like a credential. The throwaway Chrome caches are left out of it.
 
+The Chrome profile keeps its cookies encrypted with the key store of the machine that wrote it, so the profile alone only signs in on a machine with the same key store. The identity provider cookies are captured as plain values while signing in and travel in `login-cookies.json`, which the import replays into the browser, so the sign-in keeps working on another machine and on another operating system: the Chrome of the importing machine re-encrypts them with its own key store. A machine that signed in before this file existed exports the profile without it, and the identity provider asks for the account once after the import.
+
 ### `profile import`
 
 Restores an archive exported by `profile export` into `~/.cache/netsuite-cli`, so the next command signs in without asking you to sign in again. The path is the archive to read.
@@ -205,7 +207,7 @@ netsuite-cli profile import ~/netsuite-profile.tar.gz
 ```
 
 ```text
-Imported the browser profile into /home/user/.cache/netsuite-cli/browser-profile and the cached session
+Imported the browser profile into /home/user/.cache/netsuite-cli/browser-profile and the cached session and the login cookies
 ```
 
 An archive that was not produced by this CLI is refused. A profile that is already on the machine is kept unless `--force` is given.
@@ -224,7 +226,8 @@ An archive that was not produced by this CLI is refused. A profile that is alrea
 - `--json` must be a global flag, before the resource. Commands print a JSON array or object instead of a table or a sentence.
 - `--clear` stands alone: it removes the cache and exits, and cannot be combined with a command.
 - `login` signs in through the browser and stores the sign-in page in the cache; later sign-ins reuse it, so the URL is only passed the first time and after `--clear`.
-- `profile export` and `profile import` move the browser profile and the cached session. The archive holds a live session cookie, so it is written mode 600 and has to be moved like a credential.
+- `profile export` and `profile import` move the browser profile, the cached session and the login cookies. The archive holds a live session cookie and the live identity provider cookies, so it is written mode 600 and has to be moved like a credential.
+- The login cookies are captured while signing in, so they hold the state of that sign-in: re-run `netsuite-cli login <url>` before exporting when the identity provider changed the session since.
 - Both profile verbs refuse to run while a Chrome window holds the profile, and `profile import` refuses to replace a profile that is already on the machine unless `--force` is given.
 
 Errors are written to stderr as `netsuite-cli: …`. A usage error exits with status 1, and a NetSuite or session failure exits with status 2.

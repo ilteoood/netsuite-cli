@@ -25,7 +25,9 @@ const temporaryHome = () => mkdtempSync(join(tmpdir(), "netsuite-profile-"));
 const cacheOf = (home) => join(home, ".cache", "netsuite-cli");
 const cookieOf = (home) => join(cacheOf(home), "browser-profile", "Default", "Cookies");
 
-const seedProfile = (home, { session = true } = {}) => {
+const loginCookieOf = (home) => join(cacheOf(home), "login-cookies.json");
+
+const seedProfile = (home, { session = true, loginCookies = false } = {}) => {
 	mkdirSync(join(cacheOf(home), "browser-profile", "Default", "Cache"), { recursive: true });
 	writeFileSync(join(cacheOf(home), "browser-profile", "Default", "Cookies"), "cookie-data");
 	writeFileSync(join(cacheOf(home), "browser-profile", "Default", "Cache", "blob"), "throwaway");
@@ -34,6 +36,9 @@ const seedProfile = (home, { session = true } = {}) => {
 			join(cacheOf(home), "session.json"),
 			JSON.stringify({ account: "Acme", cookieHeader: "JSESSIONID=abc" }),
 		);
+	}
+	if (loginCookies === true) {
+		writeFileSync(loginCookieOf(home), JSON.stringify([{ name: "SID", value: "google-session" }]), { mode: 0o600 });
 	}
 };
 
@@ -87,6 +92,36 @@ test("the export works without a cached session and leaves it out of the archive
 			hasTheSession: membersOf(archive).includes("session.json"),
 		},
 		{ status: 0, hasTheSession: false },
+	);
+});
+
+test("the export archives the login cookies of the machine", () => {
+	const home = temporaryHome();
+	seedProfile(home, { loginCookies: true });
+
+	const { archive, result } = exportProfile(home);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			hasTheLoginCookies: membersOf(archive).includes("login-cookies.json"),
+		},
+		{ status: 0, hasTheLoginCookies: true },
+	);
+});
+
+test("the export leaves the login cookies out when the machine has none", () => {
+	const home = temporaryHome();
+	seedProfile(home);
+
+	const { archive, result } = exportProfile(home);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			hasTheLoginCookies: membersOf(archive).includes("login-cookies.json"),
+		},
+		{ status: 0, hasTheLoginCookies: false },
 	);
 });
 
@@ -147,6 +182,48 @@ test("the import restores the profile and the session on a machine without one",
 	);
 });
 
+test("the import restores the login cookies readable only by the owner", () => {
+	const source = temporaryHome();
+	seedProfile(source, { loginCookies: true });
+	const exported = exportProfile(source);
+	const target = temporaryHome();
+
+	const result = runIn(target, "profile", "import", exported.archive);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			stdout: result.stdout,
+			loginCookies: JSON.parse(readFileSync(loginCookieOf(target), "utf8")),
+			mode: statSync(loginCookieOf(target)).mode & 0o777,
+		},
+		{
+			status: 0,
+			stdout: `Imported the browser profile into ${join(cacheOf(target), "browser-profile")} and the cached session and the login cookies\n`,
+			loginCookies: [{ name: "SID", value: "google-session" }],
+			mode: 0o600,
+		},
+	);
+});
+
+test("the import refuses to replace login cookies that are already on the machine", () => {
+	const source = temporaryHome();
+	seedProfile(source, { loginCookies: true });
+	const exported = exportProfile(source);
+	const target = temporaryHome();
+	seedProfile(target, { session: false, loginCookies: true });
+
+	const refused = runIn(target, "profile", "import", exported.archive);
+
+	assert.deepStrictEqual(
+		{ status: refused.status, stderr: refused.stderr },
+		{
+			status: 1,
+			stderr: `netsuite-cli: Nothing was imported. ${cacheOf(target)} already holds a browser profile, a cached session or login cookies; re-run with --force to replace it.\n`,
+		},
+	);
+});
+
 test("the import refuses to replace a profile without force and replaces it with force", () => {
 	const source = temporaryHome();
 	seedProfile(source);
@@ -168,7 +245,7 @@ test("the import refuses to replace a profile without force and replaces it with
 		{
 			refused: {
 				status: 1,
-				stderr: `netsuite-cli: Nothing was imported. ${cacheOf(target)} already holds a browser profile or a cached session; re-run with --force to replace it.\n`,
+				stderr: `netsuite-cli: Nothing was imported. ${cacheOf(target)} already holds a browser profile, a cached session or login cookies; re-run with --force to replace it.\n`,
 			},
 			cookieAfterTheRefusal: "old-data",
 			forced: { status: 0, cookie: "cookie-data" },

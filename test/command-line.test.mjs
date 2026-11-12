@@ -371,7 +371,7 @@ test("the binary removes the cache directory on --clear", () => {
 		},
 		{
 			status: 0,
-			stdout: `Removed ${join(home, ".cache", "netsuite-cli")} and its contents (browser profile, cached session and login page)\n`,
+			stdout: `Removed ${join(home, ".cache", "netsuite-cli")} and its contents (browser profile, cached session, login cookies and login page)\n`,
 			removedTheCache: false,
 			keptTheOtherApp: true,
 		},
