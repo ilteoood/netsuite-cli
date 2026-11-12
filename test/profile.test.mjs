@@ -43,35 +43,51 @@ const membersOf = (archive) => {
 	return members;
 };
 
-const exportedArchive = (home) => {
+const exportProfile = (home) => {
 	const archive = join(home, "profile.tar.gz");
-	const result = runIn(home, "profile", "export", archive);
-	assert.equal(result.status, 0, result.stderr);
-	return archive;
+	return { archive, result: runIn(home, "profile", "export", archive) };
 };
 
 test("the export writes an archive with the profile and the session, without the chrome caches", () => {
 	const home = temporaryHome();
 	seedProfile(home);
 
-	const result = runIn(home, "profile", "export", join(home, "profile.tar.gz"));
+	const { archive, result } = exportProfile(home);
+	const members = membersOf(archive);
 
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.stdout, /^Exported the browser profile to /);
-	const members = membersOf(join(home, "profile.tar.gz"));
-	assert.ok(members.includes("browser-profile/Default/Cookies"));
-	assert.ok(members.includes("session.json"));
-	assert.ok(members.every((member) => !member.includes("Cache/")));
-	assert.equal(statSync(join(home, "profile.tar.gz")).mode & 0o777, 0o600);
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			printsTheArchive: result.stdout.startsWith("Exported the browser profile to "),
+			hasTheCookies: members.includes("browser-profile/Default/Cookies"),
+			hasTheSession: members.includes("session.json"),
+			keepsTheChromeCaches: members.filter((member) => member.includes("Cache/")),
+			mode: statSync(archive).mode & 0o777,
+		},
+		{
+			status: 0,
+			printsTheArchive: true,
+			hasTheCookies: true,
+			hasTheSession: true,
+			keepsTheChromeCaches: [],
+			mode: 0o600,
+		},
+	);
 });
 
 test("the export works without a cached session and leaves it out of the archive", () => {
 	const home = temporaryHome();
 	seedProfile(home, { session: false });
 
-	const archive = exportedArchive(home);
+	const { archive, result } = exportProfile(home);
 
-	assert.equal(membersOf(archive).includes("session.json"), false);
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			hasTheSession: membersOf(archive).includes("session.json"),
+		},
+		{ status: 0, hasTheSession: false },
+	);
 });
 
 test("the export refuses when there is no browser profile yet", () => {
@@ -79,8 +95,14 @@ test("the export refuses when there is no browser profile yet", () => {
 
 	const result = runIn(home, "profile", "export", join(home, "profile.tar.gz"));
 
-	assert.equal(result.status, 2);
-	assert.match(result.stderr, /^netsuite-cli: There is no browser profile to export yet/);
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 2,
+			stderr:
+				'netsuite-cli: There is no browser profile to export yet. Sign in first with "netsuite-cli login <url>".\n',
+		},
+	);
 });
 
 test("the export prints the archive as JSON with --json", () => {
@@ -89,48 +111,69 @@ test("the export prints the archive as JSON with --json", () => {
 	const archive = join(home, "profile.tar.gz");
 
 	const result = runIn(home, "--json", "profile", "export", archive);
-
-	assert.equal(result.status, 0, result.stderr);
 	const printed = JSON.parse(result.stdout);
-	assert.equal(printed.archive, archive);
-	assert.equal(typeof printed.bytes, "number");
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			archive: printed.archive,
+			bytesIsANumber: typeof printed.bytes === "number",
+		},
+		{ status: 0, archive, bytesIsANumber: true },
+	);
 });
 
 test("the import restores the profile and the session on a machine without one", () => {
 	const source = temporaryHome();
 	seedProfile(source);
-	const archive = exportedArchive(source);
+	const exported = exportProfile(source);
 	const target = temporaryHome();
 
-	const result = runIn(target, "profile", "import", archive);
+	const result = runIn(target, "profile", "import", exported.archive);
 
-	assert.equal(result.status, 0, result.stderr);
-	assert.match(result.stdout, /^Imported the browser profile into /);
-	assert.equal(readFileSync(cookieOf(target), "utf8"), "cookie-data");
-	assert.deepEqual(JSON.parse(readFileSync(join(cacheOf(target), "session.json"), "utf8")), {
-		account: "Acme",
-		cookieHeader: "JSESSIONID=abc",
-	});
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			stdout: result.stdout,
+			cookie: readFileSync(cookieOf(target), "utf8"),
+			session: JSON.parse(readFileSync(join(cacheOf(target), "session.json"), "utf8")),
+		},
+		{
+			status: 0,
+			stdout: `Imported the browser profile into ${join(cacheOf(target), "browser-profile")} and the cached session\n`,
+			cookie: "cookie-data",
+			session: { account: "Acme", cookieHeader: "JSESSIONID=abc" },
+		},
+	);
 });
 
 test("the import refuses to replace a profile without force and replaces it with force", () => {
 	const source = temporaryHome();
 	seedProfile(source);
-	const archive = exportedArchive(source);
+	const exported = exportProfile(source);
 	const target = temporaryHome();
 	seedProfile(target);
 	writeFileSync(cookieOf(target), "old-data");
 
-	const refused = runIn(target, "profile", "import", archive);
+	const refused = runIn(target, "profile", "import", exported.archive);
+	const cookieAfterTheRefusal = readFileSync(cookieOf(target), "utf8");
+	const forced = runIn(target, "profile", "import", exported.archive, "--force");
 
-	assert.equal(refused.status, 1);
-	assert.match(refused.stderr, /^netsuite-cli: Nothing was imported\./);
-	assert.equal(readFileSync(cookieOf(target), "utf8"), "old-data");
-
-	const forced = runIn(target, "profile", "import", archive, "--force");
-
-	assert.equal(forced.status, 0, forced.stderr);
-	assert.equal(readFileSync(cookieOf(target), "utf8"), "cookie-data");
+	assert.deepStrictEqual(
+		{
+			refused: { status: refused.status, stderr: refused.stderr },
+			cookieAfterTheRefusal,
+			forced: { status: forced.status, cookie: readFileSync(cookieOf(target), "utf8") },
+		},
+		{
+			refused: {
+				status: 1,
+				stderr: `netsuite-cli: Nothing was imported. ${cacheOf(target)} already holds a browser profile or a cached session; re-run with --force to replace it.\n`,
+			},
+			cookieAfterTheRefusal: "old-data",
+			forced: { status: 0, cookie: "cookie-data" },
+		},
+	);
 });
 
 test("the import refuses an archive that sits inside the cache directory when it has to replace it", () => {
@@ -138,12 +181,17 @@ test("the import refuses an archive that sits inside the cache directory when it
 	seedProfile(home);
 	const archive = join(cacheOf(home), "profile.tar.gz");
 	const exported = runIn(home, "profile", "export", archive);
-	assert.equal(exported.status, 0, exported.stderr);
 
 	const result = runIn(home, "profile", "import", archive, "--force");
 
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: The archive .* cannot live inside /);
+	assert.deepStrictEqual(
+		{ exportStatus: exported.status, status: result.status, stderr: result.stderr },
+		{
+			exportStatus: 0,
+			status: 1,
+			stderr: `netsuite-cli: The archive ${archive} cannot live inside ${cacheOf(home)}, because --force empties that directory before the import.\n`,
+		},
+	);
 });
 
 test("the import refuses an archive that is not a profile archive", () => {
@@ -154,9 +202,18 @@ test("the import refuses an archive that is not a profile archive", () => {
 
 	const result = runIn(home, "profile", "import", archive);
 
-	assert.equal(result.status, 2);
-	assert.match(result.stderr, /^netsuite-cli: The archive .* is not a netsuite-cli profile archive\./);
-	assert.equal(existsSync(join(cacheOf(home), "browser-profile")), false);
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			stderr: result.stderr,
+			hasABrowserProfile: existsSync(join(cacheOf(home), "browser-profile")),
+		},
+		{
+			status: 2,
+			stderr: `netsuite-cli: The archive ${archive} is not a netsuite-cli profile archive.\n`,
+			hasABrowserProfile: false,
+		},
+	);
 });
 
 test("the export refuses while chrome holds the profile and passes with a stale lock", () => {
@@ -168,15 +225,24 @@ test("the export refuses while chrome holds the profile and passes with a stale 
 
 	const locked = runIn(home, "profile", "export", join(home, "profile.tar.gz"));
 
-	assert.equal(locked.status, 1);
-	assert.match(locked.stderr, /^netsuite-cli: Chrome is using the login profile/);
-
 	rmSync(lock, { force: true });
 	symlinkSync(`${hostname()}-999999`, lock);
 
 	const stale = runIn(home, "profile", "export", join(home, "profile.tar.gz"));
 
-	assert.equal(stale.status, 0, stale.stderr);
+	assert.deepStrictEqual(
+		{
+			locked: { status: locked.status, stderr: locked.stderr },
+			stale: { status: stale.status },
+		},
+		{
+			locked: {
+				status: 1,
+				stderr: `netsuite-cli: Chrome is using the login profile at ${join(cacheOf(home), "browser-profile")}. Close every Chrome window that uses it and run the command again.\n`,
+			},
+			stale: { status: 0 },
+		},
+	);
 });
 
 test("the parser sends the archive path of the profile verbs", async () => {
@@ -187,7 +253,12 @@ test("the parser sends the archive path of the profile verbs", async () => {
 
 	await program.parseAsync(["profile", "import", "/tmp/profile.tar.gz", "--force"], { from: "user" });
 
-	assert.equal(dispatched[0].key, "profile import");
-	assert.equal(dispatched[0].flags.path, "/tmp/profile.tar.gz");
-	assert.equal(dispatched[0].flags.force, true);
+	assert.deepStrictEqual(
+		{
+			key: dispatched[0].key,
+			path: dispatched[0].flags.path,
+			force: dispatched[0].flags.force,
+		},
+		{ key: "profile import", path: "/tmp/profile.tar.gz", force: true },
+	);
 });

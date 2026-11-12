@@ -33,9 +33,14 @@ test("loginForSessionCookie launches the browser headless unless a window is ask
 		rmSync(profileDirectory, { recursive: true, force: true });
 	}
 
-	assert.equal(launches[0].headless, true);
-	assert.equal(launches[0].userDataDir, profileDirectory);
-	assert.equal(launches[1].headless, false);
+	assert.deepStrictEqual(
+		{
+			headless: launches[0].headless,
+			userDataDir: launches[0].userDataDir,
+			windowedHeadless: launches[1].headless,
+		},
+		{ headless: true, userDataDir: profileDirectory, windowedHeadless: false },
+	);
 });
 
 test("pickSessionCookieCandidates prefers the account host on the root path", () => {
@@ -45,34 +50,50 @@ test("pickSessionCookieCandidates prefers the account host on the root path", ()
 		{ name: "JSESSIONID", domain: "1234567.app.netsuite.com", path: "/", value: "account" },
 	];
 
-	assert.deepEqual(pickSessionCookieCandidates(cookies, "1234567"), ["account", "account-app", "shared"]);
+	assert.deepStrictEqual(pickSessionCookieCandidates(cookies, "1234567"), ["account", "account-app", "shared"]);
 });
 
 test("pickSessionCookieCandidates falls back to any netsuite session", () => {
 	const cookies = [{ name: "JSESSIONID", domain: ".netsuite.com", path: "/", value: "shared" }];
 
-	assert.deepEqual(pickSessionCookieCandidates(cookies, "1234567"), ["shared"]);
+	assert.deepStrictEqual(pickSessionCookieCandidates(cookies, "1234567"), ["shared"]);
 });
 
 test("pickSessionCookieCandidates ignores other accounts", () => {
 	const cookies = [{ name: "JSESSIONID", domain: "123456.app.netsuite.com", path: "/", value: "other" }];
 
-	assert.deepEqual(pickSessionCookieCandidates(cookies, "1234567"), []);
+	assert.deepStrictEqual(pickSessionCookieCandidates(cookies, "1234567"), []);
 });
 
 test("isAccountHost only accepts the account host", () => {
-	assert.equal(isAccountHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62", "1234567"), true);
-	assert.equal(isAccountHost("https://accounts.google.com/o/saml2/initsso?idpid=abc", "1234567"), false);
-	assert.equal(isAccountHost("https://123456.app.netsuite.com/app/center/card.nl", "1234567"), false);
-	assert.equal(isAccountHost("not a url", "1234567"), false);
+	assert.deepStrictEqual(
+		{
+			accountHost: isAccountHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62", "1234567"),
+			identityProvider: isAccountHost("https://accounts.google.com/o/saml2/initsso?idpid=abc", "1234567"),
+			otherAccount: isAccountHost("https://123456.app.netsuite.com/app/center/card.nl", "1234567"),
+			notAUrl: isAccountHost("not a url", "1234567"),
+		},
+		{ accountHost: true, identityProvider: false, otherAccount: false, notAUrl: false },
+	);
 });
 
 test("accountFromHost reads the account from the landing url", () => {
-	assert.equal(accountFromHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62"), "1234567");
-	assert.equal(accountFromHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62#frag"), "1234567");
-	assert.equal(accountFromHost("https://accounts.google.com/o/saml2/initsso?idpid=abc"), null);
-	assert.equal(accountFromHost("https://netsuite.com"), null);
-	assert.equal(accountFromHost("not a url"), null);
+	assert.deepStrictEqual(
+		{
+			landingUrl: accountFromHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62"),
+			landingUrlWithFragment: accountFromHost("https://1234567.app.netsuite.com/app/center/card.nl?sc=62#frag"),
+			identityProvider: accountFromHost("https://accounts.google.com/o/saml2/initsso?idpid=abc"),
+			netsuiteRoot: accountFromHost("https://netsuite.com"),
+			notAUrl: accountFromHost("not a url"),
+		},
+		{
+			landingUrl: "1234567",
+			landingUrlWithFragment: "1234567",
+			identityProvider: null,
+			netsuiteRoot: null,
+			notAUrl: null,
+		},
+	);
 });
 
 test("loginForSessionCookie needs a login url when no account is given", async () => {
