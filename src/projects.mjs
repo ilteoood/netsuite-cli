@@ -55,17 +55,24 @@ const closestChoices = (choices, query) =>
 		.slice(0, 3)
 		.map(({ project }) => project);
 
-export const fetchProjectChoices = async (client, weekStart) => {
+export const readWeekHeader = async (client, weekStart) => {
 	const [timesheet] = await client.suiteql(
-		`SELECT id, employee FROM timesheet WHERE startdate = TO_DATE('${weekStart}', 'YYYY-MM-DD')`,
+		`SELECT id, employee, custrecord_timesheetsubmitted FROM timesheet WHERE startdate = TO_DATE('${weekStart}', 'YYYY-MM-DD')`,
 	);
 	if (!timesheet) {
 		throw new UsageError(
 			`No timesheet exists for the week starting ${weekStart}. NetSuite pre-creates every week, so ${weekStart} is probably not a Monday.`,
 		);
 	}
-	const timesheetId = String(timesheet.id);
-	const employeeId = String(timesheet.employee);
+	return {
+		timesheetId: String(timesheet.id),
+		employeeId: String(timesheet.employee),
+		alreadySubmitted: timesheet.custrecord_timesheetsubmitted === "T",
+	};
+};
+
+export const fetchProjectChoices = async (client, weekStart, header = null) => {
+	const { timesheetId, employeeId } = header ?? (await readWeekHeader(client, weekStart));
 	const html = await client.text(`${TIMESHEET_PAGE}?id=${timesheetId}&whence=&e=T`);
 	const projects = decodeOptions(html, PROJECTS_FIELD)?.map((project) => choice(project.id, project.text)) ?? null;
 	if (!projects) {

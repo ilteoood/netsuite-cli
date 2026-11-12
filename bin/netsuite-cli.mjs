@@ -144,7 +144,7 @@ export const buildProgram = (dispatch) => {
 				? `Removed ${directory} and its contents (browser profile, cached session, login cookies and login page)`
 				: `Nothing to remove in ${directory}`;
 			const globals = sessionGlobals(options);
-			process.stdout.write(globals.json ? `${formatJson({ removed, directory })}\n` : `${summary}\n`);
+			emit(globals, { removed, directory }, () => summary);
 			return 0;
 		});
 
@@ -218,18 +218,15 @@ const TIMESHEET_COLUMNS = [
 	{ header: "Memo", value: (entry) => entry.memo },
 ];
 
-const write = (globals, rows, columns) =>
-	process.stdout.write(`${globals.json ? formatJson(rows) : formatTable(rows, columns)}\n`);
+const emit = (globals, value, render) => process.stdout.write(`${globals.json ? formatJson(value) : render(value)}\n`);
 
-const writeWeek = (globals, week, columns) => {
-	if (globals.json) {
-		process.stdout.write(`${formatJson(week)}\n`);
-		return;
-	}
-	const table = `${formatTable(week.entries, columns)}\n`;
-	const summary = `${formatHours(week.totalMinutes)} in the week of ${week.weekStart}${week.submitted ? ", submitted" : ""}`;
-	process.stdout.write(`${table}${summary}\n`);
-};
+const write = (globals, rows, columns) => emit(globals, rows, (rows) => formatTable(rows, columns));
+
+const weekLine = ({ totalMinutes, weekStart, submitted }) =>
+	`${formatHours(totalMinutes)} in the week of ${weekStart}${submitted === true ? ", submitted" : ""}`;
+
+const writeWeek = (globals, week, columns) =>
+	emit(globals, week, (week) => `${formatTable(week.entries, columns)}\n${weekLine(week)}`);
 
 const DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -256,16 +253,11 @@ const resolveProjectAndTask = async (client, weekStart, flags) => {
 	return { project, task: resolveChoice(projectTasks, flags.task, "task") };
 };
 
-const writeReport = (globals, report, { dryRun = false } = {}) => {
-	if (globals.json) {
-		process.stdout.write(`${formatJson(report)}\n`);
-		return;
-	}
-	const counts = `${report.create} created, ${report.replace} replaced, ${report.remove} removed`;
-	const total = `${formatHours(report.totalMinutes)} in the week of ${report.weekStart}`;
-	const submitted = report.submitted === true ? ", submitted" : "";
-	process.stdout.write(`${dryRun ? "Plan:" : "Wrote"} ${counts}, ${total}${submitted}\n`);
-};
+const writeReport = (globals, report, { dryRun = false } = {}) =>
+	emit(globals, report, (report) => {
+		const counts = `${report.create} created, ${report.replace} replaced, ${report.remove} removed`;
+		return `${dryRun ? "Plan:" : "Wrote"} ${counts}, ${weekLine(report)}`;
+	});
 
 export const handlers = {
 	login: async ({ globals, flags, signIn = loginThroughBrowser }) => {
@@ -280,11 +272,7 @@ export const handlers = {
 			throw new UsageError(`login takes the NetSuite sign-in page as an https URL, not "${loginUrl}"`);
 		}
 		const { account } = await signIn({ loginUrl, headless: false });
-		process.stdout.write(
-			globals.json
-				? `${formatJson({ account })}\n`
-				: `Signed in to ${account} (session cached in ${SESSION_CACHE_PATH})\n`,
-		);
+		emit(globals, { account }, () => `Signed in to ${account} (session cached in ${SESSION_CACHE_PATH})`);
 	},
 	"projects list": async ({ client, globals }) => {
 		const { projects } = await fetchProjectChoices(client, weekStartOf());
@@ -338,17 +326,11 @@ export const handlers = {
 			memo: flags.memo ?? "",
 			reference: flags.reference,
 		});
-		process.stdout.write(
-			globals.json ? `${formatJson(created)}\n` : `Created ${created.reference} (id ${created.id})\n`,
-		);
+		emit(globals, created, () => `Created ${created.reference} (id ${created.id})`);
 	},
 	"profile export": async ({ globals, flags }) => {
 		const { archive, bytes } = await exportProfile({ archivePath: flags.path });
-		process.stdout.write(
-			globals.json
-				? `${formatJson({ archive, bytes })}\n`
-				: `Exported the browser profile to ${archive} (${bytes} bytes)\n`,
-		);
+		emit(globals, { archive, bytes }, () => `Exported the browser profile to ${archive} (${bytes} bytes)`);
 	},
 	"profile import": async ({ globals, flags }) => {
 		const { archive, profile, session, loginCookies } = await importProfile({
@@ -359,10 +341,10 @@ export const handlers = {
 			Boolean,
 		);
 		const restoredNote = restored.length === 0 ? "" : ` and ${restored.join(" and ")}`;
-		process.stdout.write(
-			globals.json
-				? `${formatJson({ archive, profile, session, loginCookies })}\n`
-				: `Imported the browser profile into ${profile}${restoredNote}\n`,
+		emit(
+			globals,
+			{ archive, profile, session, loginCookies },
+			() => `Imported the browser profile into ${profile}${restoredNote}`,
 		);
 	},
 };
