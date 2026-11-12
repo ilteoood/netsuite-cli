@@ -48,6 +48,7 @@ test("readCookieHeader returns null when no cookie is available", () => {
 test("loginThroughBrowser signs in, caches the session and returns it", async () => {
 	const login = async (options) => {
 		assert.equal(options.account, "1234567");
+		assert.equal(options.headless, true);
 		assert.equal(typeof options.validate, "function");
 		return { account: "1234567", cookieHeader: "JSESSIONID=new" };
 	};
@@ -60,6 +61,19 @@ test("loginThroughBrowser signs in, caches the session and returns it", async ()
 		cookieHeader: "JSESSIONID=new",
 		loginUrl: null,
 	});
+});
+test("loginThroughBrowser opens a window only when the caller asks for one", async () => {
+	const signInOptions = [];
+	const login = async (options) => {
+		signInOptions.push(options);
+		return { account: "1234567", cookieHeader: "JSESSIONID=new" };
+	};
+
+	await loginThroughBrowser({ account: "1234567", loginUrl: "https://example.test/sso", login });
+	await loginThroughBrowser({ account: "1234567", loginUrl: "https://example.test/sso", login, headless: false });
+
+	assert.equal(signInOptions[0].headless, true);
+	assert.equal(signInOptions[1].headless, false);
 });
 
 test("loginThroughBrowser stores the login page and reuses it on the next sign-in", async () => {

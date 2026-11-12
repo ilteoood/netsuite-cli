@@ -252,7 +252,7 @@ const handlers = {
 		if (!isNetsuiteLoginUrl(loginUrl)) {
 			throw new UsageError(`login takes the NetSuite sign-in page as an https URL, not "${loginUrl}"`);
 		}
-		const { account } = await loginThroughBrowser({ loginUrl });
+		const { account } = await loginThroughBrowser({ loginUrl, headless: false });
 		process.stdout.write(
 			globals.json
 				? `${formatJson({ account })}\n`

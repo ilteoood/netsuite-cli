@@ -44,7 +44,7 @@ const readSessionCookies = async (browser) => {
 		return await browser.cookies();
 	} catch (error) {
 		throw new Error(
-			`The browser closed before the NetSuite session appeared (${error.message}). Run the command again and leave the window open until it closes by itself.`,
+			`The browser closed before the NetSuite session appeared (${error.message}). Run the command again and leave the browser running until it closes by itself.`,
 		);
 	}
 };
@@ -57,6 +57,7 @@ export const loginForSessionCookie = async (options = {}) => {
 	}
 	const profileDirectory = options.profileDirectory ?? BROWSER_PROFILE_DIRECTORY;
 	await mkdir(profileDirectory, { recursive: true });
+	const headless = options.headless ?? true;
 	const timeoutMs = options.timeoutMs ?? LOGIN_TIMEOUT_MS;
 	const validate = options.validate ?? (() => true);
 	const loginUrl =
@@ -66,7 +67,7 @@ export const loginForSessionCookie = async (options = {}) => {
 	try {
 		browser = await puppeteer.launch({
 			userDataDir: profileDirectory,
-			headless: false,
+			headless,
 			args: ["--no-first-run", "--no-default-browser-check"],
 		});
 	} catch (error) {
@@ -91,7 +92,9 @@ export const loginForSessionCookie = async (options = {}) => {
 			await setTimeout(POLL_INTERVAL_MS);
 		}
 		throw new Error(
-			"No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
+			headless
+				? 'No signed-in NetSuite session was captured. Run "netsuite-cli login <url>" to sign in with a browser window, then run the command again.'
+				: "No signed-in NetSuite session was captured. Log into NetSuite in the browser window that opened, then run the command again.",
 		);
 	} finally {
 		await browser.close();
