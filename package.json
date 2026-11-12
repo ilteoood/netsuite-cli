@@ -12,7 +12,7 @@
 	"scripts": {
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"test": "node --test"
+		"test": "node --test \"test/*.test.mjs\""
 	},
 	"dependencies": {
 		"commander": "^15.1.0",

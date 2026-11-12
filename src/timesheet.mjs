@@ -1,6 +1,6 @@
 import { parseISO } from "date-fns/parseISO";
 import { NetsuiteError, UsageError } from "./errors.mjs";
-import { fetchProjectChoices, fetchTasks } from "./projects.mjs";
+import { fetchProjectChoices, fetchTasks, readWeekHeader } from "./projects.mjs";
 import {
 	buildPlan,
 	formatHours,
@@ -31,23 +31,11 @@ const weekRow = ({ weekStart, days, hours, project, task, activityId, memo }) =>
 };
 
 const readWeek = async (client, weekStart) => {
-	const [timesheet] = await client.suiteql(
-		`SELECT id, employee, custrecord_timesheetsubmitted FROM timesheet WHERE startdate = TO_DATE('${weekStart}', 'YYYY-MM-DD')`,
-	);
-	if (!timesheet) {
-		throw new UsageError(`No timesheet exists for the week starting ${weekStart}.`);
-	}
-	const timesheetId = String(timesheet.id);
-	const employeeId = String(timesheet.employee);
+	const header = await readWeekHeader(client, weekStart);
 	const rows = await client.suiteql(
-		`SELECT id, TO_CHAR(trandate, 'YYYY-MM-DD') AS entrydate, hours, memo, customer, item, casetaskevent, approvalstatus FROM timebill WHERE timesheet = '${timesheetId}'`,
+		`SELECT id, TO_CHAR(trandate, 'YYYY-MM-DD') AS entrydate, hours, memo, customer, item, casetaskevent, approvalstatus FROM timebill WHERE timesheet = '${header.timesheetId}'`,
 	);
-	return {
-		timesheetId,
-		employeeId,
-		alreadySubmitted: timesheet.custrecord_timesheetsubmitted === "T",
-		existingEntries: rows.map(normalizeExistingEntry),
-	};
+	return { ...header, existingEntries: rows.map(normalizeExistingEntry) };
 };
 
 const assertNoApprovedEntries = ({ remove, replace }) => {
@@ -135,35 +123,34 @@ const countsOf = (plan) => ({
 	untouched: plan.untouched.length,
 });
 
-const namesOf = (choices) => new Map(choices.map(({ id, name }) => [id, name]));
-
-const named = (names, id) => names.get(id) ?? id;
+const namesById = (choices) => new Map(choices.map(({ id, name }) => [id, name]));
 
 const byDateThenName = (left, right) =>
 	left.date.localeCompare(right.date) ||
 	left.projectName.localeCompare(right.projectName) ||
 	left.taskName.localeCompare(right.taskName);
 
-const describeEntry = ({ id, date, minutes, memo, customer, caseTaskEvent }, names) => ({
+const describeEntry = ({ id, date, minutes, memo, customer, caseTaskEvent }, projectNames, taskNames) => ({
 	id,
 	date,
-	projectName: named(names.projects, customer),
-	taskName: named(names.tasks, caseTaskEvent),
+	projectName: projectNames.get(customer) ?? customer,
+	taskName: taskNames.get(caseTaskEvent) ?? caseTaskEvent,
 	hours: formatHours(minutes),
 	memo,
 });
 
 export const listTimesheet = async (client, weekStart) => {
 	const { timesheetId, employeeId, alreadySubmitted, existingEntries } = await readWeek(client, weekStart);
-	const { projects } = await fetchProjectChoices(client, weekStart);
+	const { projects } = await fetchProjectChoices(client, weekStart, { timesheetId, employeeId });
 	const tasks = await fetchTasks(client, { weekStart, employeeId });
-	const names = { projects: namesOf(projects), tasks: namesOf(tasks) };
+	const projectNames = namesById(projects);
+	const taskNames = namesById(tasks);
 	return {
 		weekStart,
 		timesheetId,
 		submitted: alreadySubmitted,
 		totalMinutes: totalMinutesOf(existingEntries),
-		entries: existingEntries.map((entry) => describeEntry(entry, names)).sort(byDateThenName),
+		entries: existingEntries.map((entry) => describeEntry(entry, projectNames, taskNames)).sort(byDateThenName),
 	};
 };
 

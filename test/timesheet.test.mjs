@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
-
-const fixture = JSON.parse(readFileSync(new URL("./fixtures/timesheet-2026-11-16.json", import.meta.url), "utf8"));
+import { escapedPage, fixture } from "./support/netsuite-pages.mjs";
 
 const weekStart = "2026-11-16";
 const project = { id: "1234", name: "Acme Platform" };
@@ -22,8 +20,7 @@ const entryRow = (overrides = {}) => ({
 	...overrides,
 });
 
-const projectsPage = (projects) =>
-	`<html><body>custpage_filtered_projects\\":{\\"name\\":\\"custpage_filtered_projects\\",\\"supplementedOptions\\":${JSON.stringify(projects).replaceAll('"', '\\"')},\\"hasBlankString\\":false</body></html>`;
+const projectsPage = () => escapedPage({ custpage_filtered_projects: fixture.projects });
 
 const clientWith = ({
 	timesheet = { id: "900", employee: "4242" },
@@ -39,7 +36,7 @@ const clientWith = ({
 			return query.includes("FROM timesheet") ? (timesheet ? [timesheet] : []) : entries;
 		},
 		text: async (path) => {
-			return path.includes("weeklytimebill") ? projectsPage(fixture.projects) : JSON.stringify(fixture.tasks);
+			return path.includes("weeklytimebill") ? projectsPage() : JSON.stringify(fixture.tasks);
 		},
 		request: async (path, { method = "GET", body } = {}) => {
 			calls.push({ path, method, body });
@@ -547,4 +544,12 @@ test("listTimesheet reports an empty week with no time in it", async () => {
 		totalMinutes: 0,
 		entries: [],
 	});
+});
+
+test("listTimesheet reads the timesheet record once", async () => {
+	const client = clientWith({ entries: [entryRow()] });
+
+	await listTimesheet(client, weekStart);
+
+	assert.equal(client.calls.filter(({ query }) => query?.includes("FROM timesheet")).length, 1);
 });

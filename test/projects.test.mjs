@@ -1,23 +1,13 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
+import { escapedPage, fixture } from "./support/netsuite-pages.mjs";
 
-const fixture = JSON.parse(readFileSync(new URL("./fixtures/timesheet-2026-11-16.json", import.meta.url), "utf8"));
 const capturedProjects = fixture.projects.map(({ id, text }) => ({ id, name: text }));
 const capturedTasks = fixture.tasks.flatMap(({ id: projectId, tasks }) =>
 	tasks.map(({ id, name }) => ({ id, name, projectId })),
 );
-
-const escapedPage = (fields) =>
-	`<html><body>${Object.entries(fields)
-		.map(
-			([fieldId, options]) =>
-				`${fieldId}\\":{\\"name\\":\\"${fieldId}\\",\\"supplementedOptions\\":${JSON.stringify(options).replaceAll('"', '\\"')},\\"hasBlankString\\":false`,
-		)
-		.join("")}</body></html>`;
-
 const capturedPage = escapedPage({ custpage_filtered_projects: fixture.projects });
 
 const clientWith = ({ page, rows = [{ id: fixture.timesheetId, employee: fixture.employeeId }] }) => {
@@ -53,7 +43,7 @@ test("fetchProjectChoices reads the captured page in its own order", async () =>
 			timesheetId: fixture.timesheetId,
 			employeeId: fixture.employeeId,
 			projects: capturedProjects,
-			query: `SELECT id, employee FROM timesheet WHERE startdate = TO_DATE('${fixture.week}', 'YYYY-MM-DD')`,
+			query: `SELECT id, employee, custrecord_timesheetsubmitted FROM timesheet WHERE startdate = TO_DATE('${fixture.week}', 'YYYY-MM-DD')`,
 			path: `/app/accounting/transactions/time/weeklytimebill.nl?id=${fixture.timesheetId}&whence=&e=T`,
 		},
 	);
