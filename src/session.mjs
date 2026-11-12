@@ -71,13 +71,20 @@ const assertSessionIsValid = async (account, cookieHeader) => {
 	);
 };
 
-export const loginThroughBrowser = async ({ account = null, loginUrl = null, login = null, ...options } = {}) => {
+export const loginThroughBrowser = async ({
+	account = null,
+	loginUrl = null,
+	login = null,
+	headless = true,
+	...options
+} = {}) => {
 	const signIn = login ?? (await import("./browser-login.mjs")).loginForSessionCookie;
 	const signInUrl = loginUrl ?? storedLoginUrl();
 	const session = await signIn({
 		...options,
 		account,
 		loginUrl: signInUrl,
+		headless,
 		validate: (candidate, candidateAccount) => probeSession(candidateAccount, candidate),
 	});
 	writeCachedSession(session.account, session.cookieHeader, signInUrl);

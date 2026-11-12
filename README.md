@@ -4,7 +4,7 @@ Command-line client for the NetSuite timesheet and vacation records of the signe
 
 ## Installation
 
-Requires Node.js 26 or newer. `npm install` downloads the Chrome for Testing build that the first sign-in opens.
+Requires Node.js 26 or newer. `npm install` downloads the Chrome for Testing build that the sign-in uses.
 
 ```bash
 npm install
@@ -21,14 +21,14 @@ Sign in once with the NetSuite sign-in page:
 netsuite-cli login 'https://accounts.google.com/o/saml2/initsso?idpid=C00example&spid=0000000000000000&forceauthn=false'
 ```
 
-A headful Chrome window opens on that page and waits for you to sign in. The window closes by itself once the session cookie is captured, and the command prints the account it found. The page is stored with the session, so `netsuite-cli login` with no argument opens the stored page again; the URL is only needed the first time and after `--clear`, because it is the only way to learn which account to use. Every other command signs in the same way when the cached session is missing or expired, with no flag to pass; on a machine that never signed in, it stops and asks for `netsuite-cli login <url>` first.
+A headful Chrome window opens on that page and waits for you to sign in. The window closes by itself once the session cookie is captured, and the command prints the account it found. The page is stored with the session, so `netsuite-cli login` with no argument opens the stored page again; the URL is only needed the first time and after `--clear`, because it is the only way to learn which account to use. Every other command signs in the same way when the cached session is missing or expired, with no flag to pass, but without a window, so the command works on a machine with no display. That sign-in can only finish while the shared browser profile still holds a live identity-provider session; when it cannot, the command stops and asks for `netsuite-cli login`.
 
 The browser uses one shared profile in `~/.cache/netsuite-cli/browser-profile`, so the identity provider usually remembers the account and later sign-ins need no typing. The captured session cookie and its account are cached in `~/.cache/netsuite-cli/session.json`, readable only by you (mode 600).
 Run `netsuite-cli --clear` to remove the profile, the cached session and the stored login page. The next sign-in needs the page again, because the cleared cache is the only place the account and the page are kept; a machine that passes a cookie must leave the cookie out for that run.
 
-Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. The browser is the Chrome for Testing build downloaded by `puppeteer`; set `NETSUITE_BROWSER` to the path of a specific Chrome or Chromium binary to use that one instead.
+Every run probes the cached session first. If it has expired, the CLI signs in again through the same browser profile and retries the request, so normal use does not require re-entering credentials. That sign-in runs headless; only `netsuite-cli login` opens a window, because that is the one you do by hand. The browser is the Chrome for Testing build downloaded by `puppeteer`. In a container that runs as root it needs `PUPPETEER_DANGEROUS_NO_SANDBOX=true`, because Chrome refuses to start as root with its sandbox on.
 
-On a machine that cannot open a browser, provide the cookie instead:
+On a machine that cannot run a browser, provide the cookie instead:
 
 ```bash
 netsuite-cli --cookie-file ~/netsuite-cookie.txt vacations list
@@ -198,7 +198,7 @@ The archive holds the live session cookie, so it is written readable only by you
 
 ### `profile import`
 
-Restores an archive exported by `profile export` into `~/.cache/netsuite-cli`, so the next command signs in without a browser. The path is the archive to read.
+Restores an archive exported by `profile export` into `~/.cache/netsuite-cli`, so the next command signs in without asking you to sign in again. The path is the archive to read.
 
 ```bash
 netsuite-cli profile import ~/netsuite-profile.tar.gz

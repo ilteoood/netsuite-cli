@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildProgram, errorReport, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -186,6 +186,22 @@ test("the parser sends login with its url and without one", async () => {
 
 	const [withoutUrl] = await parse(["login"]);
 	assert.deepEqual(withoutUrl.flags, { url: null });
+});
+
+test("the login command asks for a browser window", async () => {
+	const signIns = [];
+	await handlers.login({
+		globals: { cookieFile: null, json: true },
+		flags: { url: "https://example.test/sso" },
+		signIn: async (options) => {
+			signIns.push(options);
+			return { account: "1234567" };
+		},
+	});
+
+	assert.equal(signIns.length, 1);
+	assert.equal(signIns[0].headless, false);
+	assert.equal(signIns[0].loginUrl, "https://example.test/sso");
 });
 
 test("the binary rejects a login url that is not an https page", () => {

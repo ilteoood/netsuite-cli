@@ -240,8 +240,8 @@ const writeReport = (globals, report, { dryRun = false } = {}) => {
 	process.stdout.write(`${dryRun ? "Plan:" : "Wrote"} ${counts}, ${total}${submitted}\n`);
 };
 
-const handlers = {
-	login: async ({ globals, flags }) => {
+export const handlers = {
+	login: async ({ globals, flags, signIn = loginThroughBrowser }) => {
 		if (globals.cookieFile !== null) {
 			throw new UsageError('"login" signs in through the browser, so it cannot be combined with "--cookie-file"');
 		}
@@ -252,7 +252,7 @@ const handlers = {
 		if (!isNetsuiteLoginUrl(loginUrl)) {
 			throw new UsageError(`login takes the NetSuite sign-in page as an https URL, not "${loginUrl}"`);
 		}
-		const { account } = await loginThroughBrowser({ loginUrl });
+		const { account } = await signIn({ loginUrl, headless: false });
 		process.stdout.write(
 			globals.json
 				? `${formatJson({ account })}\n`
