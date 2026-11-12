@@ -34,19 +34,27 @@ test("rememberLoginCookies keeps the replayable fields and drops the chrome book
 		{ path },
 	);
 
-	assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), [
+	assert.deepStrictEqual(
 		{
-			name: "SID",
-			value: "google-session",
-			domain: ".google.com",
-			path: "/",
-			expires: 1893456000,
-			httpOnly: true,
-			secure: true,
-			sameSite: "None",
+			stored: JSON.parse(readFileSync(path, "utf8")),
+			mode: statSync(path).mode & 0o777,
 		},
-	]);
-	assert.equal(statSync(path).mode & 0o777, 0o600);
+		{
+			stored: [
+				{
+					name: "SID",
+					value: "google-session",
+					domain: ".google.com",
+					path: "/",
+					expires: 1893456000,
+					httpOnly: true,
+					secure: true,
+					sameSite: "None",
+				},
+			],
+			mode: 0o600,
+		},
+	);
 });
 
 test("restoreLoginCookies replays the stored cookies on another machine", async () => {
@@ -62,10 +70,9 @@ test("restoreLoginCookies replays the stored cookies on another machine", async 
 
 	const replayed = await restoreLoginCookies(browser, { path });
 
-	assert.equal(replayed, 2);
-	assert.deepEqual(
-		browser.replayed.map((cookie) => cookie.name),
-		["SID", "JSESSIONID"],
+	assert.deepStrictEqual(
+		{ count: replayed, names: browser.replayed.map((cookie) => cookie.name) },
+		{ count: 2, names: ["SID", "JSESSIONID"] },
 	);
 });
 
@@ -82,25 +89,28 @@ test("restoreLoginCookies leaves the expired cookies out", async () => {
 
 	await restoreLoginCookies(browser, { path });
 
-	assert.deepEqual(
+	assert.deepStrictEqual(
 		browser.replayed.map((cookie) => cookie.value),
 		["alive"],
 	);
 });
 
 test("restoreLoginCookies writes nothing when the file is missing, corrupt or fully expired", async () => {
-	const missing = fakeBrowser();
-	assert.equal(await restoreLoginCookies(missing, { path: temporaryPath() }), 0);
-
 	const corruptPath = temporaryPath();
 	writeFileSync(corruptPath, "not json");
-	const corrupt = fakeBrowser();
-	assert.equal(await restoreLoginCookies(corrupt, { path: corruptPath }), 0);
-
 	const expiredPath = temporaryPath();
 	writeFileSync(expiredPath, JSON.stringify([{ name: "SID", value: "old", expires: 1 }]));
+	const missing = fakeBrowser();
+	const corrupt = fakeBrowser();
 	const expired = fakeBrowser();
-	assert.equal(await restoreLoginCookies(expired, { path: expiredPath }), 0);
 
-	assert.deepEqual([missing.replayed, corrupt.replayed, expired.replayed], [[], [], []]);
+	assert.deepStrictEqual(
+		{
+			missing: await restoreLoginCookies(missing, { path: temporaryPath() }),
+			corrupt: await restoreLoginCookies(corrupt, { path: corruptPath }),
+			expired: await restoreLoginCookies(expired, { path: expiredPath }),
+			replayed: [missing.replayed, corrupt.replayed, expired.replayed],
+		},
+		{ missing: 0, corrupt: 0, expired: 0, replayed: [[], [], []] },
+	);
 });

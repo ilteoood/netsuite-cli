@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildProgram, errorReport, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -35,23 +35,29 @@ test("the parser reads the globals before the resource and the flags after the v
 		"--hours",
 		"8",
 	]);
-	assert.deepEqual(command.globals, {
-		cookieFile: "/tmp/cookie.txt",
-		json: true,
-	});
-	assert.deepEqual(command.flags, { project: "Acme Platform", task: "WebPortal", hours: "8" });
-	assert.equal(command.key, "timesheet fill");
+
+	assert.deepStrictEqual(
+		{ globals: command.globals, flags: command.flags, key: command.key },
+		{
+			globals: { cookieFile: "/tmp/cookie.txt", json: true },
+			flags: { project: "Acme Platform", task: "WebPortal", hours: "8" },
+			key: "timesheet fill",
+		},
+	);
 });
 
 test("the parser defaults the globals and leaves the flags out", async () => {
 	const [command] = await parse(["projects", "list"]);
-	assert.deepEqual(command.globals, { cookieFile: null, json: false });
-	assert.deepEqual(command.flags, {});
+
+	assert.deepStrictEqual(
+		{ globals: command.globals, flags: command.flags },
+		{ globals: { cookieFile: null, json: false }, flags: {} },
+	);
 });
 
 test("the parser accepts --flag=value", async () => {
 	const [command] = await parse(["--cookie-file=/tmp/cookie.txt", "vacations", "list"]);
-	assert.equal(command.globals.cookieFile, "/tmp/cookie.txt");
+	assert.strictEqual(command.globals.cookieFile, "/tmp/cookie.txt");
 });
 
 test("the parser reads a flag value as a value and not as a global flag", async () => {
@@ -64,162 +70,286 @@ test("the parser reads a flag value as a value and not as a global flag", async 
 		"Annual Leave",
 		"--memo=--json",
 	]);
-	assert.equal(command.flags.memo, "--json");
+	assert.strictEqual(command.flags.memo, "--json");
 });
 
 test("the parser keeps the boolean flags out until they are given", async () => {
 	const [without] = await parse(["timesheet", "fill", "--project", "Acme", "--task", "Web", "--hours", "8"]);
-	assert.equal(without.flags.dryRun, undefined);
 	const [given] = await parse(["timesheet", "fill", "--project", "Acme", "--task", "Web", "--hours", "8", "--dry-run"]);
-	assert.equal(given.flags.dryRun, true);
+
+	assert.deepStrictEqual(
+		{ without: without.flags.dryRun, given: given.flags.dryRun },
+		{ without: undefined, given: true },
+	);
 });
 
 test("errorReport maps UsageError to exit 1 and everything else to exit 2", () => {
-	assert.deepEqual(errorReport(new UsageError("bad flag")), { exitCode: 1, message: "bad flag" });
-	const netsuite = new NetsuiteError("NetSuite refused the write", { status: 403, detail: "Permission Violation" });
-	assert.deepEqual(errorReport(netsuite), {
-		exitCode: 2,
-		message: "NetSuite refused the write: Permission Violation",
-	});
-	assert.deepEqual(errorReport(new Error("boom")), { exitCode: 2, message: "boom" });
-	assert.deepEqual(errorReport("boom"), { exitCode: 2, message: "boom" });
+	assert.deepStrictEqual(
+		{
+			usage: errorReport(new UsageError("bad flag")),
+			netsuite: errorReport(
+				new NetsuiteError("NetSuite refused the write", {
+					status: 403,
+					detail: "Permission Violation",
+				}),
+			),
+			error: errorReport(new Error("boom")),
+			text: errorReport("boom"),
+		},
+		{
+			usage: { exitCode: 1, message: "bad flag" },
+			netsuite: { exitCode: 2, message: "NetSuite refused the write: Permission Violation" },
+			error: { exitCode: 2, message: "boom" },
+			text: { exitCode: 2, message: "boom" },
+		},
+	);
 });
 
 test("the binary prints the usage on --help and exits 0", () => {
 	const result = run("--help");
-	assert.equal(result.status, 0);
-	assert.ok(result.stdout.startsWith("Usage: netsuite-cli "));
-	assert.equal(result.stderr, "");
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			printsTheUsage: result.stdout.startsWith("Usage: netsuite-cli "),
+			stderr: result.stderr,
+		},
+		{ status: 0, printsTheUsage: true, stderr: "" },
+	);
 });
 
 test("the binary lists the resources and the global flags on the root help", () => {
 	const result = run("--help");
-	for (const resource of ["projects", "vacations", "timesheet", "profile"]) {
-		assert.match(result.stdout, new RegExp(resource));
-	}
-	assert.match(result.stdout, / {7}netsuite-cli login \[url\]/);
-	assert.doesNotMatch(result.stdout, /--login-url/);
-	assert.match(result.stdout, /--cookie-file <path>/);
-	assert.match(result.stdout, /--json/);
-	assert.match(result.stdout, /--clear/);
+
+	assert.deepStrictEqual(
+		{
+			resources: ["projects", "vacations", "timesheet", "profile"].filter((resource) =>
+				result.stdout.includes(resource),
+			),
+			printsTheLoginUsage: result.stdout.includes("       netsuite-cli login [url]"),
+			hasNoLoginUrlFlag: !result.stdout.includes("--login-url"),
+			hasTheCookieFileFlag: result.stdout.includes("--cookie-file <path>"),
+			hasTheJsonFlag: result.stdout.includes("--json"),
+			hasTheClearFlag: result.stdout.includes("--clear"),
+		},
+		{
+			resources: ["projects", "vacations", "timesheet", "profile"],
+			printsTheLoginUsage: true,
+			hasNoLoginUrlFlag: true,
+			hasTheCookieFileFlag: true,
+			hasTheJsonFlag: true,
+			hasTheClearFlag: true,
+		},
+	);
 });
 
 test("the binary prints the flags of one verb and no flag of another", () => {
 	const result = run("timesheet", "fill", "--help");
-	assert.equal(result.status, 0);
-	assert.match(result.stdout, /Usage: netsuite-cli timesheet fill/);
-	assert.match(result.stdout, /--dry-run/);
-	assert.match(result.stdout, /--submit/);
-	assert.doesNotMatch(result.stdout, /--start/);
-	assert.match(result.stdout, /Global flags go before the resource: --cookie-file, --json\./);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			printsTheUsage: result.stdout.includes("Usage: netsuite-cli timesheet fill"),
+			hasTheDryRunFlag: result.stdout.includes("--dry-run"),
+			hasTheSubmitFlag: result.stdout.includes("--submit"),
+			hasNoStartFlag: !result.stdout.includes("--start"),
+			printsTheGlobalNote: result.stdout.includes("Global flags go before the resource: --cookie-file, --json."),
+		},
+		{
+			status: 0,
+			printsTheUsage: true,
+			hasTheDryRunFlag: true,
+			hasTheSubmitFlag: true,
+			hasNoStartFlag: true,
+			printsTheGlobalNote: true,
+		},
+	);
 });
 
 test("the binary prints a prefixed error line and exits 1 on an unknown verb", () => {
 	const result = run("timesheet", "show");
-	assert.equal(result.status, 1);
-	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: unknown command 'show'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stdout: result.stdout, stderr: result.stderr },
+		{
+			status: 1,
+			stdout: "",
+			stderr: "netsuite-cli: unknown command 'show'\n",
+		},
+	);
 });
 
 test("the binary names the available resources when the resource is unknown", () => {
 	const result = run("time", "fill");
-	assert.equal(result.status, 1);
-	assert.match(
-		result.stderr,
-		/^netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet, profile/,
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: 'netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet, profile\n',
+		},
 	);
 });
 
 test("the binary prints the help of a resource and exits 1 when the verb is missing", () => {
 	const result = run("vacations");
-	assert.equal(result.status, 1);
-	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /Usage: netsuite-cli vacations/);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			stdout: result.stdout,
+			printsTheUsage: result.stderr.startsWith("Usage: netsuite-cli vacations"),
+		},
+		{ status: 1, stdout: "", printsTheUsage: true },
+	);
 });
 
 test("the binary rejects a global flag after the resource", () => {
 	const result = run("timesheet", "fill", "--json", "--project", "Acme", "--task", "Web", "--hours", "8");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: unknown option '--json'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: unknown option '--json'\n" },
+	);
 });
 
 test("the binary rejects a global flag before the verb", () => {
 	const result = run("timesheet", "--cookie-file", "c.txt", "fill");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: unknown option '--cookie-file'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: unknown option '--cookie-file'\n" },
+	);
 });
 
 test("the binary rejects a missing resource", () => {
 	const result = run();
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: missing the resource/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: 'netsuite-cli: missing the resource; run "netsuite-cli --help" for the command list\n',
+		},
+	);
 });
 
 test("the binary rejects an unknown flag", () => {
 	const result = run("--verbose", "projects", "list");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: unknown option '--verbose'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: unknown option '--verbose'\n" },
+	);
 });
 
 test("the binary rejects a flag of another verb", () => {
 	const result = run("projects", "list", "--week", "2026-11-16");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: unknown option '--week'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: unknown option '--week'\n" },
+	);
 });
 
 test("the binary rejects an unexpected argument after the verb", () => {
 	const result = run("projects", "list", "extra");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: too many arguments for 'list'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: "netsuite-cli: too many arguments for 'list'. Expected 0 arguments but got 1: extra.\n",
+		},
+	);
 });
 
 test("the binary prefixes a missing option value and exits 1", () => {
 	const result = run("--cookie-file");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: option '--cookie-file <path>' argument missing/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: option '--cookie-file <path>' argument missing\n" },
+	);
 });
 
 test("the parser sends login with its url and without one", async () => {
 	const [withUrl] = await parse(["login", "https://example.test/sso"]);
-	assert.equal(withUrl.key, "login");
-	assert.deepEqual(withUrl.flags, { url: "https://example.test/sso" });
-
 	const [withoutUrl] = await parse(["login"]);
-	assert.deepEqual(withoutUrl.flags, { url: null });
+
+	assert.deepStrictEqual(
+		{
+			withUrl: { key: withUrl.key, flags: withUrl.flags },
+			withoutUrl: { key: withoutUrl.key, flags: withoutUrl.flags },
+		},
+		{
+			withUrl: { key: "login", flags: { url: "https://example.test/sso" } },
+			withoutUrl: { key: "login", flags: { url: null } },
+		},
+	);
+});
+
+test("the login command asks for a browser window", async () => {
+	const signIns = [];
+	await handlers.login({
+		globals: { cookieFile: null, json: true },
+		flags: { url: "https://example.test/sso" },
+		signIn: async (options) => {
+			signIns.push(options);
+			return { account: "1234567" };
+		},
+	});
+
+	assert.deepStrictEqual(signIns, [{ loginUrl: "https://example.test/sso", headless: false }]);
 });
 
 test("the binary rejects a login url that is not an https page", () => {
 	const result = run("login", "http://example.test/sso");
 
-	assert.equal(result.status, 1);
-	assert.match(
-		result.stderr,
-		/^netsuite-cli: login takes the NetSuite sign-in page as an https URL, not "http:\/\/example\.test\/sso"/,
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: 'netsuite-cli: login takes the NetSuite sign-in page as an https URL, not "http://example.test/sso"\n',
+		},
 	);
 });
 
 test("the binary refuses to combine login with a cookie file", () => {
 	const result = run("--cookie-file", "/tmp/cookie.txt", "login", "https://example.test/sso");
 
-	assert.equal(result.status, 1);
-	assert.match(
-		result.stderr,
-		/^netsuite-cli: "login" signs in through the browser, so it cannot be combined with "--cookie-file"/,
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: 'netsuite-cli: "login" signs in through the browser, so it cannot be combined with "--cookie-file"\n',
+		},
 	);
 });
 
 test("the binary asks for the login url when none is stored", () => {
 	const home = mkdtempSync(join(tmpdir(), "netsuite-login-"));
-	const result = spawnSync(process.execPath, [binary, "login"], { encoding: "utf8", env: isolatedHome(home) });
+	const result = spawnSync(process.execPath, [binary, "login"], {
+		encoding: "utf8",
+		env: isolatedHome(home),
+	});
 
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: login has no stored sign-in page yet/);
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{
+			status: 1,
+			stderr: 'netsuite-cli: login has no stored sign-in page yet; pass it: "netsuite-cli login <url>"\n',
+		},
+	);
 });
 
 test("the binary names the missing required flag of a verb", () => {
 	const result = run("vacations", "create", "--start", "2027-04-14");
-	assert.equal(result.status, 1);
-	assert.match(result.stderr, /^netsuite-cli: required option '--type <name>' not specified/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stderr: result.stderr },
+		{ status: 1, stderr: "netsuite-cli: required option '--type <name>' not specified\n" },
+	);
 });
 
 test("the binary removes the cache directory on --clear", () => {
@@ -232,10 +362,20 @@ test("the binary removes the cache directory on --clear", () => {
 		env: isolatedHome(home),
 	});
 
-	assert.equal(result.status, 0);
-	assert.match(result.stdout, /Removed .*netsuite-cli/);
-	assert.equal(existsSync(join(home, ".cache", "netsuite-cli")), false);
-	assert.equal(existsSync(join(home, ".cache", "other-app")), true);
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			stdout: result.stdout,
+			removedTheCache: existsSync(join(home, ".cache", "netsuite-cli")),
+			keptTheOtherApp: existsSync(join(home, ".cache", "other-app")),
+		},
+		{
+			status: 0,
+			stdout: `Removed ${join(home, ".cache", "netsuite-cli")} and its contents (browser profile, cached session, login cookies and login page)\n`,
+			removedTheCache: false,
+			keptTheOtherApp: true,
+		},
+	);
 });
 
 test("the binary prints the removal as JSON with --clear --json", () => {
@@ -247,36 +387,66 @@ test("the binary prints the removal as JSON with --clear --json", () => {
 		env: isolatedHome(home),
 	});
 
-	assert.equal(result.status, 0);
-	assert.deepEqual(JSON.parse(result.stdout), {
-		removed: true,
-		directory: join(home, ".cache", "netsuite-cli"),
-	});
+	assert.deepStrictEqual(
+		{ status: result.status, printed: JSON.parse(result.stdout) },
+		{
+			status: 0,
+			printed: { removed: true, directory: join(home, ".cache", "netsuite-cli") },
+		},
+	);
 });
 
 test("the binary rejects --clear combined with a command and exits 1", () => {
+	const rejected = [];
+
 	for (const argv of [
 		["--clear", "projects"],
 		["--clear", "projects", "list"],
 		["projects", "list", "--clear"],
 	]) {
 		const result = run(...argv);
-		assert.equal(result.status, 1);
-		assert.equal(result.stdout, "");
-		assert.match(result.stderr, /^netsuite-cli: "--clear" cannot be combined with a command/);
+		rejected.push({ status: result.status, stdout: result.stdout, stderr: result.stderr });
 	}
+
+	assert.deepStrictEqual(rejected, [
+		{
+			status: 1,
+			stdout: "",
+			stderr: 'netsuite-cli: "--clear" cannot be combined with a command\n',
+		},
+		{
+			status: 1,
+			stdout: "",
+			stderr: 'netsuite-cli: "--clear" cannot be combined with a command\n',
+		},
+		{
+			status: 1,
+			stdout: "",
+			stderr: 'netsuite-cli: "--clear" cannot be combined with a command\n',
+		},
+	]);
 });
 
 test("the binary refuses a --clear typed between the resource and the verb", () => {
 	const result = run("projects", "--clear", "list");
-	assert.equal(result.status, 1);
-	assert.equal(result.stdout, "");
-	assert.match(result.stderr, /^netsuite-cli: unknown option '--clear'/);
+
+	assert.deepStrictEqual(
+		{ status: result.status, stdout: result.stdout, stderr: result.stderr },
+		{ status: 1, stdout: "", stderr: "netsuite-cli: unknown option '--clear'\n" },
+	);
 });
 
-test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", () => {
-	assert.deepEqual(weekDaysOf("2026-11-09"), ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"]);
-	assert.deepEqual(weekDaysOf("2026-11-09", "WED, sat"), ["2026-11-11", "2026-11-14"]);
+test("weekDaysOf turns day names into the dates of the week, defaulting to the working week", async () => {
+	assert.deepStrictEqual(
+		{
+			workingWeek: weekDaysOf("2026-11-09"),
+			chosen: weekDaysOf("2026-11-09", "WED, sat"),
+		},
+		{
+			workingWeek: ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"],
+			chosen: ["2026-11-11", "2026-11-14"],
+		},
+	);
 	assert.throws(() => weekDaysOf("2026-11-09", "mon,funday"), UsageError);
 });
 
@@ -285,6 +455,12 @@ test("the binary runs when it is started through a symlink, as npm and npx do", 
 	const link = join(directory, "netsuite-cli");
 	symlinkSync(binary, link);
 	const result = spawnSync(process.execPath, [link, "--help"], { encoding: "utf8" });
-	assert.equal(result.status, 0);
-	assert.match(result.stdout, /^Usage: netsuite-cli/);
+
+	assert.deepStrictEqual(
+		{
+			status: result.status,
+			printsTheUsage: result.stdout.startsWith("Usage: netsuite-cli"),
+		},
+		{ status: 0, printsTheUsage: true },
+	);
 });

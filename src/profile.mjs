@@ -175,9 +175,8 @@ export const importProfile = async ({ archivePath, cacheDirectory = CACHE_DIRECT
 	}
 	const session = await pathExists(sessionPath);
 	const loginCookies = await pathExists(loginCookiePath);
-	for (const path of [sessionPath, loginCookiePath]) {
-		if (await pathExists(path)) await chmod(path, 0o600);
-	}
+	if (session) await chmod(sessionPath, 0o600);
+	if (loginCookies) await chmod(loginCookiePath, 0o600);
 
 	return { archive, profile: profileDirectory, session, loginCookies };
 };
