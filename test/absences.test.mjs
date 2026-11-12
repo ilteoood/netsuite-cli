@@ -29,7 +29,7 @@ const clientReturning = (rows) => {
 
 test("listAbsences maps a SuiteQL row to the table shape", async () => {
 	const rows = await listAbsences(clientReturning([absenceRow()]), { today });
-	assert.deepEqual(rows, [
+	assert.deepStrictEqual(rows, [
 		{
 			id: "10",
 			typeId: "84",
@@ -53,7 +53,7 @@ test("listAbsences drops cancelled rows and rows that already ended", async () =
 		]),
 		{ today },
 	);
-	assert.deepEqual(
+	assert.deepStrictEqual(
 		rows.map((row) => row.id),
 		["13", "10"],
 	);
@@ -68,7 +68,7 @@ test("listAbsences sorts the rows by start date, soonest first", async () => {
 		]),
 		{ today },
 	);
-	assert.deepEqual(
+	assert.deepStrictEqual(
 		rows.map((row) => row.id),
 		["21", "22", "20"],
 	);
@@ -77,18 +77,27 @@ test("listAbsences sorts the rows by start date, soonest first", async () => {
 test("listAbsences reads the entries with one SuiteQL query", async () => {
 	const client = clientReturning([]);
 	await listAbsences(client, { today });
-	assert.deepEqual(client.queries, [ABSENCE_QUERY]);
-	assert.match(client.queries[0], /FROM customrecord_ct_hr_extendedtimeentry/);
-	for (const field of [
-		"custrecord_ct_hr_ext_leaveabsencetype",
-		"custrecord_ct_hr_absencestartdate2",
-		"custrecord_ct_hr_absenceenddate2",
-		"custrecord_ct_hr_approvalstatus",
-		"custrecord_ct_hr_ext_days_dur",
-	]) {
-		assert.match(client.queries[0], new RegExp(field));
-	}
-	assert.doesNotMatch(client.queries[0], /WHERE id/);
+
+	assert.deepStrictEqual(
+		{
+			queries: client.queries,
+			readsFromTheTimeEntryTable: /FROM customrecord_ct_hr_extendedtimeentry/.test(client.queries[0]),
+			selectsEveryField: [
+				"custrecord_ct_hr_ext_leaveabsencetype",
+				"custrecord_ct_hr_absencestartdate2",
+				"custrecord_ct_hr_absenceenddate2",
+				"custrecord_ct_hr_approvalstatus",
+				"custrecord_ct_hr_ext_days_dur",
+			].map((field) => new RegExp(field).test(client.queries[0])),
+			hasNoIdFilter: !/WHERE id/.test(client.queries[0]),
+		},
+		{
+			queries: [ABSENCE_QUERY],
+			readsFromTheTimeEntryTable: true,
+			selectsEveryField: [true, true, true, true, true],
+			hasNoIdFilter: true,
+		},
+	);
 });
 
 test("an id that is not in the label table prints as the id", async () => {
@@ -98,8 +107,11 @@ test("an id that is not in the label table prints as the id", async () => {
 		]),
 		{ today },
 	);
-	assert.equal(row.typeLabel, "999");
-	assert.equal(row.statusLabel, "9");
+
+	assert.deepStrictEqual(
+		{ typeLabel: row.typeLabel, statusLabel: row.statusLabel },
+		{ typeLabel: "999", statusLabel: "9" },
+	);
 });
 
 const ABSENCE_PATH = "/services/rest/record/v1/customrecord_ct_hr_extendedtimeentry";
@@ -132,20 +144,31 @@ test("createAbsence posts the verified payload with the composed reference", asy
 
 	const created = await createAbsence(client, request);
 
-	assert.deepEqual(created, { id: "9001", reference: "Annual Leave 2027-04-14 → 2027-04-14" });
-	assert.equal(client.calls.posts.length, 1);
-	assert.equal(client.calls.posts[0].path, ABSENCE_PATH);
-	assert.equal(client.calls.posts[0].method, "POST");
-	assert.deepEqual(client.calls.posts[0].body, {
-		name: "Annual Leave 2027-04-14 → 2027-04-14",
-		custrecord_ct_hr_lap_employeeid: { id: "4242" },
-		custrecord_ct_hr_ext_leaveabsencetype: { id: "84" },
-		custrecord_ct_hr_absencestartdate2: "2027-04-14",
-		custrecord_ct_hr_absenceenddate2: "2027-04-14",
-		custrecord_ct_hr_memo2: "Family trip",
-		custrecord_ct_hr_approvalstatus: { id: "2" },
-		custrecord_ct_hr_islapsubmitted: true,
-	});
+	assert.deepStrictEqual(
+		{
+			created,
+			postCount: client.calls.posts.length,
+			path: client.calls.posts[0].path,
+			method: client.calls.posts[0].method,
+			body: client.calls.posts[0].body,
+		},
+		{
+			created: { id: "9001", reference: "Annual Leave 2027-04-14 → 2027-04-14" },
+			postCount: 1,
+			path: ABSENCE_PATH,
+			method: "POST",
+			body: {
+				name: "Annual Leave 2027-04-14 → 2027-04-14",
+				custrecord_ct_hr_lap_employeeid: { id: "4242" },
+				custrecord_ct_hr_ext_leaveabsencetype: { id: "84" },
+				custrecord_ct_hr_absencestartdate2: "2027-04-14",
+				custrecord_ct_hr_absenceenddate2: "2027-04-14",
+				custrecord_ct_hr_memo2: "Family trip",
+				custrecord_ct_hr_approvalstatus: { id: "2" },
+				custrecord_ct_hr_islapsubmitted: true,
+			},
+		},
+	);
 });
 
 test("createAbsence uses an explicit reference verbatim and defaults the end date", async () => {
@@ -153,9 +176,14 @@ test("createAbsence uses an explicit reference verbatim and defaults the end dat
 
 	const created = await createAbsence(client, { ...request, reference: "Easter break", endDate: undefined });
 
-	assert.equal(created.reference, "Easter break");
-	assert.equal(client.calls.posts[0].body.name, "Easter break");
-	assert.equal(client.calls.posts[0].body.custrecord_ct_hr_absenceenddate2, "2027-04-14");
+	assert.deepStrictEqual(
+		{
+			reference: created.reference,
+			name: client.calls.posts[0].body.name,
+			endDate: client.calls.posts[0].body.custrecord_ct_hr_absenceenddate2,
+		},
+		{ reference: "Easter break", name: "Easter break", endDate: "2027-04-14" },
+	);
 });
 
 test("createAbsence is a NetsuiteError when the create returns no Location header", async () => {
@@ -176,8 +204,13 @@ test("createAbsence refuses a range that overlaps an existing entry before any p
 		assert.match(error.message, /Annual Leave 2027-04-10 → 2027-04-14 \(id 10\)/);
 		return true;
 	});
-	assert.equal(client.calls.posts.length, 0);
-	assert.match(client.calls.queries[1], /custrecord_ct_hr_lap_employeeid = '4242'/);
+	assert.deepStrictEqual(
+		{
+			postCount: client.calls.posts.length,
+			employeeFilter: /custrecord_ct_hr_lap_employeeid = '4242'/.test(client.calls.queries[1]),
+		},
+		{ postCount: 0, employeeFilter: true },
+	);
 });
 
 test("createAbsence still sees an entry that ended in the past", async () => {
@@ -189,7 +222,7 @@ test("createAbsence still sees an entry that ended in the past", async () => {
 		createAbsence(client, { ...request, startDate: "2020-03-05", endDate: "2020-03-06" }),
 		(error) => error instanceof UsageError && /id 31/.test(error.message),
 	);
-	assert.equal(client.calls.posts.length, 0);
+	assert.strictEqual(client.calls.posts.length, 0);
 });
 
 test("createAbsence ignores a cancelled entry when checking overlaps", async () => {
@@ -199,8 +232,7 @@ test("createAbsence ignores a cancelled entry when checking overlaps", async () 
 
 	const created = await createAbsence(client, request);
 
-	assert.equal(created.id, "9001");
-	assert.equal(client.calls.posts.length, 1);
+	assert.deepStrictEqual({ id: created.id, postCount: client.calls.posts.length }, { id: "9001", postCount: 1 });
 });
 
 test("createAbsence allows a range that starts the day after an existing one ends", async () => {
@@ -208,15 +240,16 @@ test("createAbsence allows a range that starts the day after an existing one end
 
 	const created = await createAbsence(client, request);
 
-	assert.equal(created.id, "9001");
-	assert.equal(client.calls.posts.length, 1);
+	assert.deepStrictEqual({ id: created.id, postCount: client.calls.posts.length }, { id: "9001", postCount: 1 });
 });
 
 test("currentEmployeeId reads the employee of the current week's timesheet", async () => {
 	const client = writeClient();
 
-	assert.equal(await currentEmployeeId(client), "4242");
-	assert.deepEqual(client.calls.queries, [EMPLOYEE_ID_QUERY(weekStartOf())]);
+	assert.deepStrictEqual(
+		{ employeeId: await currentEmployeeId(client), queries: client.calls.queries },
+		{ employeeId: "4242", queries: [EMPLOYEE_ID_QUERY(weekStartOf())] },
+	);
 });
 
 test("currentEmployeeId fails when the current week has no timesheet", async () => {

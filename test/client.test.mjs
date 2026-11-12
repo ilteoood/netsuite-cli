@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, test } from "node:test";
+import { NetsuiteError } from "../src/errors.mjs";
 
 const account = "1234567";
 const home = mkdtempSync(join(tmpdir(), "netsuite-client-"));
@@ -12,7 +13,6 @@ const cachePath = join(cacheDirectory, "session.json");
 mkdirSync(cacheDirectory, { recursive: true });
 
 const { createClient } = await import("../src/client.mjs");
-const { NetsuiteError } = await import("../src/errors.mjs");
 
 const stubFetch = (responses) => {
 	const calls = [];
@@ -48,16 +48,36 @@ test("a 401 logs in again once and replays the request", async () => {
 	const login = countLogins();
 	const client = await createClient({ login });
 
-	assert.equal(client.account, account);
-	assert.deepEqual(await client.suiteql("SELECT id FROM timesheet"), [{ id: "1" }]);
-	assert.equal(login.calls, 1);
-	assert.equal(calls.length, 3);
-	assert.equal(calls[2].url, `https://${account}.app.netsuite.com/services/rest/query/v1/suiteql?limit=1000`);
-	assert.equal(calls[2].options.method, "POST");
-	assert.equal(calls[2].options.headers.cookie, "JSESSIONID=fresh");
-	assert.equal(calls[2].options.headers.prefer, "transient");
-	assert.deepEqual(JSON.parse(calls[2].options.body), { q: "SELECT id FROM timesheet" });
-	assert.equal(JSON.parse(readFileSync(cachePath, "utf8")).cookieHeader, "JSESSIONID=fresh");
+	assert.deepStrictEqual(
+		{
+			account: client.account,
+			rows: await client.suiteql("SELECT id FROM timesheet"),
+			loginCalls: login.calls,
+			fetchCalls: calls.length,
+			replay: {
+				url: calls[2].url,
+				method: calls[2].options.method,
+				cookie: calls[2].options.headers.cookie,
+				prefer: calls[2].options.headers.prefer,
+				body: JSON.parse(calls[2].options.body),
+			},
+			cachedCookie: JSON.parse(readFileSync(cachePath, "utf8")).cookieHeader,
+		},
+		{
+			account,
+			rows: [{ id: "1" }],
+			loginCalls: 1,
+			fetchCalls: 3,
+			replay: {
+				url: `https://${account}.app.netsuite.com/services/rest/query/v1/suiteql?limit=1000`,
+				method: "POST",
+				cookie: "JSESSIONID=fresh",
+				prefer: "transient",
+				body: { q: "SELECT id FROM timesheet" },
+			},
+			cachedCookie: "JSESSIONID=fresh",
+		},
+	);
 });
 
 test("a second 401 throws instead of logging in a third time", async () => {
@@ -71,11 +91,11 @@ test("a second 401 throws instead of logging in a third time", async () => {
 
 	await assert.rejects(client.suiteql("SELECT 1"), (error) => {
 		assert.ok(error instanceof NetsuiteError);
-		assert.equal(error.status, 401);
+		assert.strictEqual(error.status, 401);
 		assert.match(error.message, /sign in to netsuite by hand/i);
 		return true;
 	});
-	assert.equal(login.calls, 1);
+	assert.strictEqual(login.calls, 1);
 });
 
 test("a 403 carries the status and the first line of NetSuite's message", async () => {
@@ -92,11 +112,11 @@ test("a 403 carries the status and the first line of NetSuite's message", async 
 
 	await assert.rejects(client.request("/services/rest/record/v1/job"), (error) => {
 		assert.ok(error instanceof NetsuiteError);
-		assert.equal(error.status, 403);
-		assert.equal(error.detail, detail);
+		assert.strictEqual(error.status, 403);
+		assert.strictEqual(error.detail, detail);
 		return true;
 	});
-	assert.equal(login.calls, 0);
+	assert.strictEqual(login.calls, 0);
 });
 
 test("a 500 carries the status and the first line of NetSuite's message", async () => {
@@ -109,11 +129,11 @@ test("a 500 carries the status and the first line of NetSuite's message", async 
 
 	await assert.rejects(client.request("/services/rest/record/v1/timesheet/7"), (error) => {
 		assert.ok(error instanceof NetsuiteError);
-		assert.equal(error.status, 500);
-		assert.equal(error.detail, "Unexpected internal error");
+		assert.strictEqual(error.status, 500);
+		assert.strictEqual(error.detail, "Unexpected internal error");
 		return true;
 	});
-	assert.equal(login.calls, 0);
+	assert.strictEqual(login.calls, 0);
 });
 
 test("suiteql returns no rows when NetSuite sends no items", async () => {
@@ -123,7 +143,7 @@ test("suiteql returns no rows when NetSuite sends no items", async () => {
 	]);
 	const client = await createClient({ login: countLogins() });
 
-	assert.deepEqual(await client.suiteql("SELECT 1"), []);
+	assert.deepStrictEqual(await client.suiteql("SELECT 1"), []);
 });
 
 test("an empty body resolves to null", async () => {
@@ -133,7 +153,7 @@ test("an empty body resolves to null", async () => {
 	]);
 	const client = await createClient({ login: countLogins() });
 
-	assert.equal(await client.request("/services/rest/record/v1/timesheet/7"), null);
+	assert.strictEqual(await client.request("/services/rest/record/v1/timesheet/7"), null);
 });
 
 test("a browser sign-in that cannot start is a NetsuiteError, not a raw error", async () => {
@@ -173,10 +193,20 @@ test("requestRaw exposes the status and the Location header of a create", async 
 		body: { name: "x" },
 	});
 
-	assert.equal(calls.length, 2);
-	assert.equal(created.status, 204);
-	assert.equal(created.body, null);
-	assert.match(created.headers.get("location"), /\/customrecord\/84520$/);
+	assert.deepStrictEqual(
+		{
+			fetchCalls: calls.length,
+			status: created.status,
+			body: created.body,
+			location: created.headers.get("location"),
+		},
+		{
+			fetchCalls: 2,
+			status: 204,
+			body: null,
+			location: `https://${account}.app.netsuite.com/services/rest/record/v1/customrecord/84520`,
+		},
+	);
 });
 
 test("text returns the raw page instead of parsing it as JSON", async () => {
@@ -186,5 +216,5 @@ test("text returns the raw page instead of parsing it as JSON", async () => {
 	]);
 	const client = await createClient({ login: countLogins() });
 
-	assert.equal(await client.text("/time/weeklytimebill.nl?id=7&e=T"), "<html><body>weekly</body></html>");
+	assert.strictEqual(await client.text("/time/weeklytimebill.nl?id=7&e=T"), "<html><body>weekly</body></html>");
 });

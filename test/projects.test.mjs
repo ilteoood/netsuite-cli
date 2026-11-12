@@ -41,13 +41,21 @@ test("fetchProjectChoices reads the captured page in its own order", async () =>
 
 	const choices = await fetchProjectChoices(client, fixture.week);
 
-	assert.equal(choices.timesheetId, fixture.timesheetId);
-	assert.equal(choices.employeeId, fixture.employeeId);
-	assert.deepEqual(choices.projects, capturedProjects);
-	assert.match(client.calls.queries[0], /startdate = TO_DATE\('2026-11-16', 'YYYY-MM-DD'\)/);
-	assert.equal(
-		client.calls.paths[0],
-		`/app/accounting/transactions/time/weeklytimebill.nl?id=${fixture.timesheetId}&whence=&e=T`,
+	assert.deepStrictEqual(
+		{
+			timesheetId: choices.timesheetId,
+			employeeId: choices.employeeId,
+			projects: choices.projects,
+			query: client.calls.queries[0],
+			path: client.calls.paths[0],
+		},
+		{
+			timesheetId: fixture.timesheetId,
+			employeeId: fixture.employeeId,
+			projects: capturedProjects,
+			query: `SELECT id, employee FROM timesheet WHERE startdate = TO_DATE('${fixture.week}', 'YYYY-MM-DD')`,
+			path: `/app/accounting/transactions/time/weeklytimebill.nl?id=${fixture.timesheetId}&whence=&e=T`,
+		},
 	);
 });
 
@@ -56,9 +64,13 @@ test("fetchTasks reads every task of the week in one suitelet call, grouped by p
 
 	const tasks = await fetchTasks(client, { weekStart: fixture.week, employeeId: fixture.employeeId });
 
-	assert.deepEqual(tasks, capturedTasks);
-	assert.match(client.calls.paths[0], /script=1394&deploy=1&compid=1234567/);
-	assert.match(client.calls.paths[0], /trandate=2026-11-16&employeeId=4242&projectId=$/);
+	assert.deepStrictEqual(
+		{ tasks, path: client.calls.paths[0] },
+		{
+			tasks: capturedTasks,
+			path: `/app/site/hosting/scriptlet.nl?script=1394&deploy=1&compid=1234567&trandate=${fixture.week}&employeeId=${fixture.employeeId}&projectId=`,
+		},
+	);
 });
 
 test("fetchTasks reports an unreadable task list", async () => {
@@ -74,14 +86,16 @@ test("fetchTasks reports an unreadable task list", async () => {
 test("a task name shared by several projects resolves under its own project", () => {
 	const shared = capturedTasks.filter((task) => task.name === "Internal Project Task");
 
-	assert.equal(shared.length, 6);
-	assert.equal(
-		resolveChoice(
-			shared.filter((task) => task.projectId === "1242"),
-			"internal",
-			"task",
-		).id,
-		"2004",
+	assert.deepStrictEqual(
+		{
+			sharedCount: shared.length,
+			id: resolveChoice(
+				shared.filter((task) => task.projectId === "1242"),
+				"internal",
+				"task",
+			).id,
+		},
+		{ sharedCount: 6, id: "2004" },
 	);
 });
 
@@ -94,7 +108,7 @@ test("fetchProjectChoices reports a missing timesheet as a Monday problem", asyn
 		assert.match(error.message, /not a Monday/);
 		return true;
 	});
-	assert.deepEqual(client.calls.paths, []);
+	assert.deepStrictEqual(client.calls.paths, []);
 });
 
 test("fetchProjectChoices reports the login page as an expired session", async () => {
@@ -126,7 +140,7 @@ test("fetchProjectChoices reports an empty project list as no projects", async (
 test("resolveChoice resolves one case-insensitive substring match", () => {
 	const project = resolveChoice(capturedProjects, "  acme   PLATFORM ", "project");
 
-	assert.deepEqual(project, { id: "1234", name: "Acme Platform" });
+	assert.deepStrictEqual(project, { id: "1234", name: "Acme Platform" });
 });
 
 test("resolveChoice refuses an ambiguous name and lists every candidate", () => {
