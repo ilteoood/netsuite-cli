@@ -70,7 +70,6 @@ const commands = {
 			memo: { type: "string", value: "<text>", description: "Memo (default: the task name)" },
 			"dry-run": { type: "boolean", description: "Print the plan and write nothing" },
 			force: { type: "boolean", description: "Write even when the week already has entries" },
-			submit: { type: "boolean", description: "Submit the timesheet after filling it" },
 		},
 	},
 	"timesheet add": {
@@ -251,11 +250,14 @@ const emit = (globals, value, render) => process.stdout.write(`${globals.json ? 
 
 const write = (globals, rows, columns) => emit(globals, rows, (rows) => formatTable(rows, columns));
 
-const weekLine = ({ totalMinutes, weekStart, submitted }) =>
-	`${formatHours(totalMinutes)} in the week of ${weekStart}${submitted === true ? ", submitted" : ""}`;
+const weekLine = ({ totalMinutes, weekStart }) => `${formatHours(totalMinutes)} in the week of ${weekStart}`;
 
 const writeWeek = (globals, week, columns) =>
-	emit(globals, week, (week) => `${formatTable(week.entries, columns)}\n${weekLine(week)}`);
+	emit(
+		globals,
+		week,
+		(week) => `${formatTable(week.entries, columns)}\n${weekLine(week)}${week.submitted ? ", submitted" : ""}`,
+	);
 
 const DAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
 
@@ -383,7 +385,6 @@ export const handlers = {
 			memo: flags.memo ?? task.name,
 			dryRun: flags.dryRun,
 			force: flags.force,
-			submit: flags.submit,
 		});
 		writeReport(globals, report, { dryRun: flags.dryRun });
 	},
