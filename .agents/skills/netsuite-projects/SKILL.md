@@ -6,7 +6,7 @@ description: "List the NetSuite projects of the signed-in account with the netsu
 
 ## When to Use
 
-Use when asked which projects the NetSuite timesheet offers, or which project name or id to pass to `timesheet fill` and `timesheet add`, for the account the CLI is signed in as. The tool is the `netsuite-cli` binary (run as `npx github:ilteoood/netsuite-cli`, no install needed) and the command is `npx github:ilteoood/netsuite-cli projects list`; `npx github:ilteoood/netsuite-cli projects list --help` lists the flags. Writing time is the `netsuite-timesheet` skill; this one only reads.
+Use when asked which projects the NetSuite timesheet offers, or which project name or id to pass to `timesheet fill` and `timesheet add`, for the account the CLI is signed in as. The tool is the `netsuite-cli` binary (run as `npx github:ilteoood/netsuite-cli`, no install needed) and the command is `npx github:ilteoood/netsuite-cli projects list`; `npx github:ilteoood/netsuite-cli projects list --help` lists the flags. The tasks one project offers are the `netsuite-tasks` skill. Writing time is the `netsuite-timesheet` skill; this one only reads.
 
 ## Procedure
 
