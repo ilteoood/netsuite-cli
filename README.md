@@ -254,10 +254,10 @@ Print the plan without writing:
 netsuite-cli timesheet fill --week 2026-11-09 --project acme --task development --hours 7:30 --days mon,wed,fri --dry-run
 ```
 
-Update a week that already contains hours for this project, using a memo on every entry, then submit the timesheet:
+Update a week that already contains hours for this project:
 
 ```bash
-netsuite-cli timesheet fill --week 2026-11-09 --project acme --task development --hours 8 --memo "Acme platform" --force --submit
+netsuite-cli timesheet fill --week 2026-11-09 --project acme --task development --hours 8 --memo "Acme platform" --force
 ```
 
 ### `timesheet add`
@@ -327,7 +327,7 @@ An archive that was not produced by this CLI is refused. A profile that is alrea
 - `--dry-run` prints the plan and writes nothing.
 - `timesheet fill` refuses to change or remove existing hours unless `--force` is given; nothing is written in that case.
 - Weeks with approved time entries cannot be changed, even with `--force`.
-- `--submit` requires a memo on every entry in the timesheet before NetSuite accepts the submission. `timesheet fill` stores the task name as the memo unless `--memo` is given.
+- `timesheet submit` requires a memo on every entry of the week before NetSuite accepts the submission. `timesheet fill` and `timesheet add` store the task name as the memo unless `--memo` is given, and refuse an empty `--memo`.
 - `vacations create` files a real approval request and refuses to create a range that overlaps any existing non-cancelled vacation of the employee. An end date before the start date is rejected.
 - `--json` must be a global flag, before the resource. Commands print a JSON array or object instead of a table or a sentence.
 - `--clear` stands alone: it removes the cache and exits, and cannot be combined with a command.

@@ -95,7 +95,6 @@ test("fillTimesheet creates every scheduled day of a fresh week", async () => {
 				keep: 0,
 				untouched: 0,
 				totalMinutes: 900,
-				submitted: false,
 			},
 			selectsTheWeek: true,
 			selectsTheEntries: true,
@@ -242,49 +241,6 @@ test("fillTimesheet reports a missing timesheet as a usage error naming the week
 	assert.deepStrictEqual({ calls: client.calls.length, writes: writes(client) }, { calls: 1, writes: [] });
 });
 
-test("fillTimesheet submits the week when asked", async () => {
-	const client = clientWith();
-
-	const report = await fillTimesheet(client, fillOptions({ days: ["2026-11-16"], submit: true }));
-
-	assert.deepStrictEqual(
-		{ submitted: report.submitted, lastWrite: writeCalls(client).at(-1) },
-		{
-			submitted: true,
-			lastWrite: {
-				path: "/services/rest/record/v1/timesheet/900/@submit",
-				method: "POST",
-				body: {},
-			},
-		},
-	);
-});
-
-test("fillTimesheet refuses to submit when NetSuite answers success false", async () => {
-	const client = clientWith({ submitResult: { result: { success: false } } });
-
-	await assert.rejects(fillTimesheet(client, fillOptions({ days: ["2026-11-16"], submit: true })), (error) => {
-		assert.ok(error instanceof NetsuiteError);
-		assert.match(error.message, /NetSuite refused to submit timesheet 900/);
-		return true;
-	});
-});
-
-test("fillTimesheet refuses to submit a week that holds an entry without a memo", async () => {
-	const client = clientWith();
-
-	await assert.rejects(
-		fillTimesheet(client, fillOptions({ days: ["2026-11-16"], memo: "", submit: true })),
-		(error) => {
-			assert.ok(error instanceof UsageError);
-			assert.match(error.message, /memo on every time entry before submitting/);
-			assert.match(error.message, /Missing: 2026-11-16 Acme Platform\./);
-			return true;
-		},
-	);
-	assert.deepStrictEqual(writes(client), []);
-});
-
 test("addTimeEntry adds one day and leaves the other days of the project alone", async () => {
 	const client = clientWith({
 		entries: [entryRow({ id: "501", entrydate: "2026-11-16" }), entryRow({ id: "502", entrydate: "2026-11-17" })],
@@ -396,6 +352,27 @@ test("fillTimesheet refuses hours that are not a positive number", async () => {
 		assert.match(error.message, /--hours expects a positive number/);
 		return true;
 	});
+	assert.deepStrictEqual(writes(client), []);
+});
+
+test("fillTimesheet refuses a blank memo before writing", async () => {
+	const client = clientWith();
+
+	await assert.rejects(fillTimesheet(client, fillOptions({ memo: " " })), (error) => {
+		assert.ok(error instanceof UsageError);
+		assert.match(error.message, /--memo cannot be empty/);
+		return true;
+	});
+	assert.deepStrictEqual(writes(client), []);
+});
+
+test("addTimeEntry refuses an empty memo before writing", async () => {
+	const client = clientWith();
+
+	await assert.rejects(
+		addTimeEntry(client, { date: "2026-11-18", project, task, hours: "7:30", activityId: "71", memo: "" }),
+		(error) => error instanceof UsageError && /--memo cannot be empty/.test(error.message),
+	);
 	assert.deepStrictEqual(writes(client), []);
 });
 

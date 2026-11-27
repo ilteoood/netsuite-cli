@@ -20,6 +20,9 @@ const weekRow = ({ weekStart, days, hours, project, task, activityId, memo }) =>
 	if (!(minutes > 0)) {
 		throw new UsageError(`--hours expects a positive number such as 8 or 7:30, not "${hours}".`);
 	}
+	if (!memo.trim()) {
+		throw new UsageError("--memo cannot be empty: NetSuite refuses to submit a week with an entry that has no memo.");
+	}
 	return {
 		dailyHours: weekDates(weekStart).map((date) => (days.includes(date) ? minutes / 60 : 0)),
 		projectId: project.id,
@@ -60,7 +63,7 @@ const assertEveryEntryHasMemo = (entries) => {
 	const withoutMemo = entries.filter((entry) => !entry.memo);
 	if (withoutMemo.length > 0) {
 		throw new UsageError(
-			`NetSuite needs a memo on every time entry before submitting. Missing: ${withoutMemo.map((entry) => `${entry.date} ${entry.label ?? `project ${entry.customer}`}`).join(", ")}.`,
+			`NetSuite needs a memo on every time entry before submitting. Missing: ${withoutMemo.map((entry) => `${entry.date} project ${entry.customer}`).join(", ")}.`,
 		);
 	}
 };
@@ -155,18 +158,7 @@ export const listTimesheet = async (client, weekStart) => {
 };
 
 export const fillTimesheet = async (client, options) => {
-	const {
-		weekStart,
-		project,
-		task,
-		hours,
-		days,
-		activityId,
-		memo,
-		dryRun = false,
-		force = false,
-		submit = false,
-	} = options;
+	const { weekStart, project, task, hours, days, activityId, memo, dryRun = false, force = false } = options;
 	const { timesheetId, employeeId, alreadySubmitted, existingEntries } = await readWeek(client, weekStart);
 	const plan = buildPlan({
 		rows: [weekRow({ weekStart, days, hours, project, task, activityId, memo })],
@@ -178,7 +170,6 @@ export const fillTimesheet = async (client, options) => {
 		timesheetId,
 		...countsOf(plan),
 		totalMinutes: totalMinutesOf([...plan.desired, ...plan.untouched]),
-		submitted: false,
 	};
 
 	if (dryRun) return report;
@@ -186,13 +177,8 @@ export const fillTimesheet = async (client, options) => {
 	assertWeekEditable({ timesheetId, alreadySubmitted });
 	assertNoApprovedEntries(plan);
 	assertForced(plan, force);
-	if (submit) assertEveryEntryHasMemo([...plan.desired, ...plan.untouched]);
 	await writePlan(client, { timesheetId, employeeId, plan });
-
-	if (!submit) return report;
-
-	await submitWeek(client, timesheetId);
-	return { ...report, submitted: true };
+	return report;
 };
 
 export const addTimeEntry = async (client, options) => {
