@@ -25,7 +25,7 @@
 		"src"
 	],
 	"devDependencies": {
-		"@biomejs/biome": "^2.6.7"
+		"@biomejs/biome": "^2.6.8"
 	},
 	"allowScripts": {
 		"puppeteer": true
