@@ -1,4 +1,3 @@
-import { format } from "date-fns/format";
 import { NetsuiteError, UsageError } from "./errors.mjs";
 import { APPROVAL_STATUSES, LEAVE_TYPES, labelOf } from "./labels.mjs";
 import { weekStartOf } from "./schedule.mjs";
@@ -33,11 +32,11 @@ const toAbsence = (row) => {
 	};
 };
 
-export const listAbsences = async (client, { today = format(new Date(), "yyyy-MM-dd") } = {}) => {
+export const listAbsences = async (client, { from, to }) => {
 	const rows = await client.suiteql(ABSENCE_QUERY);
 	return rows
 		.map(toAbsence)
-		.filter((row) => row.endDate >= today && row.statusId !== CANCELLED_STATUS)
+		.filter((row) => row.endDate >= from && (to === null || row.startDate <= to) && row.statusId !== CANCELLED_STATUS)
 		.sort((left, right) => left.startDate.localeCompare(right.startDate));
 };
 

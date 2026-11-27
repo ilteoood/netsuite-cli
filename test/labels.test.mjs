@@ -29,8 +29,13 @@ test("the label tables hold the account's own enums", () => {
 			leaveTypes: {
 				84: "Annual Leave",
 				85: "Bank Holiday",
+				100: "Sick Leave",
+				101: "Special Leave",
 				102: "Training",
+				103: "Unpaid Leave",
+				183: "Open Source Leave",
 				242: "Event Leave",
+				247: "Study Leave",
 				252: "Other Leave",
 			},
 			approvalStatuses: {

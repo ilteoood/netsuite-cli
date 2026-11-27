@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command, CommanderError, Option } from "commander";
+import { format } from "date-fns/format";
 import { parseISO } from "date-fns/parseISO";
 import { createAbsence, listAbsences } from "../src/absences.mjs";
 import { clearCache, SESSION_CACHE_PATH } from "../src/cache.mjs";
@@ -24,8 +25,11 @@ const commands = {
 		},
 	},
 	"vacations list": {
-		summary: "List the upcoming vacations",
-		flags: {},
+		summary: "List the vacations of a date range (default: upcoming)",
+		flags: {
+			from: { type: "string", value: "<date>", description: "First day of the range, YYYY-MM-DD (default: today)" },
+			to: { type: "string", value: "<date>", description: "Last day of the range, YYYY-MM-DD (default: none)" },
+		},
 	},
 	"vacations create": {
 		summary: "Create a vacation request",
@@ -263,6 +267,18 @@ const isoDate = (flagName, value) => {
 	throw new UsageError(`--${flagName} takes a date as YYYY-MM-DD, not "${value}"`);
 };
 
+export const absenceRangeOf = ({ from, to }, today = format(new Date(), "yyyy-MM-dd")) => {
+	const range = { from: isoDate("from", from) ?? today, to: isoDate("to", to) ?? null };
+	if (range.to !== null && range.to < range.from) {
+		throw new UsageError(
+			from === undefined
+				? `--to ${range.to} is before today, where the range starts by default; add --from to look back`
+				: `--to ${range.to} is before --from ${range.from}`,
+		);
+	}
+	return range;
+};
+
 const resolveProjectAndTask = async (client, weekStart, flags) => {
 	const { project, tasks } = await resolveProjectTasks(client, weekStart, flags.project);
 	return { project, task: resolveChoice(tasks, flags.task, "task") };
@@ -297,8 +313,8 @@ export const handlers = {
 		const { tasks } = await resolveProjectTasks(client, weekStartOf(), flags.project);
 		write(globals, tasks, TASK_COLUMNS);
 	},
-	"vacations list": async ({ client, globals }) => {
-		write(globals, await listAbsences(client), VACATION_COLUMNS);
+	"vacations list": async ({ client, globals, flags }) => {
+		write(globals, await listAbsences(client, absenceRangeOf(flags)), VACATION_COLUMNS);
 	},
 	"timesheet list": async ({ client, globals, flags }) => {
 		const weekStart = isoDate("week", flags.week) ?? weekStartOf();

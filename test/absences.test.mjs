@@ -4,7 +4,7 @@ import { ABSENCE_QUERY, createAbsence, currentEmployeeId, EMPLOYEE_ID_QUERY, lis
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { weekStartOf } from "../src/schedule.mjs";
 
-const today = "2026-11-10";
+const from = "2026-11-10";
 
 const absenceRow = (overrides = {}) => ({
 	id: "10",
@@ -28,7 +28,7 @@ const clientReturning = (rows) => {
 };
 
 test("listAbsences maps a SuiteQL row to the table shape", async () => {
-	const rows = await listAbsences(clientReturning([absenceRow()]), { today });
+	const rows = await listAbsences(clientReturning([absenceRow()]), { from, to: null });
 	assert.deepStrictEqual(rows, [
 		{
 			id: "10",
@@ -51,11 +51,28 @@ test("listAbsences drops cancelled rows and rows that already ended", async () =
 			absenceRow({ id: "12", enddate: "2026-11-09" }),
 			absenceRow({ id: "13", startdate: "2026-11-10", enddate: "2026-11-10" }),
 		]),
-		{ today },
+		{ from, to: null },
 	);
 	assert.deepStrictEqual(
 		rows.map((row) => row.id),
 		["13", "10"],
+	);
+});
+
+test("listAbsences keeps the rows that overlap a bounded range", async () => {
+	const rows = await listAbsences(
+		clientReturning([
+			absenceRow({ id: "30", startdate: "2025-12-26", enddate: "2026-01-01" }),
+			absenceRow({ id: "31", startdate: "2026-06-18", enddate: "2026-06-19" }),
+			absenceRow({ id: "32", startdate: "2026-12-31", enddate: "2027-01-04" }),
+			absenceRow({ id: "33", startdate: "2025-12-24", enddate: "2025-12-24" }),
+			absenceRow({ id: "34", startdate: "2027-01-05", enddate: "2027-01-05" }),
+		]),
+		{ from: "2026-01-01", to: "2026-12-31" },
+	);
+	assert.deepStrictEqual(
+		rows.map((row) => row.id),
+		["30", "31", "32"],
 	);
 });
 
@@ -66,7 +83,7 @@ test("listAbsences sorts the rows by start date, soonest first", async () => {
 			absenceRow({ id: "21", startdate: "2026-11-16", enddate: "2026-11-16" }),
 			absenceRow({ id: "22", startdate: "2026-11-20", enddate: "2026-11-20" }),
 		]),
-		{ today },
+		{ from, to: null },
 	);
 	assert.deepStrictEqual(
 		rows.map((row) => row.id),
@@ -76,7 +93,7 @@ test("listAbsences sorts the rows by start date, soonest first", async () => {
 
 test("listAbsences reads the entries with one SuiteQL query", async () => {
 	const client = clientReturning([]);
-	await listAbsences(client, { today });
+	await listAbsences(client, { from, to: null });
 
 	assert.deepStrictEqual(
 		{
@@ -105,7 +122,7 @@ test("an id that is not in the label table prints as the id", async () => {
 		clientReturning([
 			absenceRow({ custrecord_ct_hr_ext_leaveabsencetype: "999", custrecord_ct_hr_approvalstatus: "9" }),
 		]),
-		{ today },
+		{ from, to: null },
 	);
 
 	assert.deepStrictEqual(

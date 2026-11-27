@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { absenceRangeOf, buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -498,5 +498,44 @@ test("the parser sends the week of timesheet submit", async () => {
 	assert.deepStrictEqual(
 		{ key: command.key, flags: command.flags },
 		{ key: "timesheet submit", flags: { week: "2026-11-23" } },
+	);
+});
+
+test("absenceRangeOf starts the range today and leaves it open unless told otherwise", () => {
+	const today = "2026-11-27";
+	assert.deepStrictEqual(
+		[
+			absenceRangeOf({ from: "2026-03-01", to: "2026-03-31" }, today),
+			absenceRangeOf({ to: "2027-01-31" }, today),
+			absenceRangeOf({ from: "2026-01-01" }, today),
+			absenceRangeOf({}, today),
+		],
+		[
+			{ from: "2026-03-01", to: "2026-03-31" },
+			{ from: "2026-11-27", to: "2027-01-31" },
+			{ from: "2026-01-01", to: null },
+			{ from: "2026-11-27", to: null },
+		],
+	);
+});
+
+test("absenceRangeOf refuses a malformed date and an inverted range", () => {
+	for (const [flags, fragment] of [
+		[{ from: "2026-03-01", to: "2026-02-01" }, "is before --from 2026-03-01"],
+		[{ to: "2026-06-30" }, "is before today, where the range starts by default; add --from"],
+		[{ from: "1/3/2026" }, "--from takes a date"],
+	]) {
+		assert.throws(
+			() => absenceRangeOf(flags, "2026-11-27"),
+			(error) => error instanceof UsageError && error.message.includes(fragment),
+		);
+	}
+});
+
+test("the parser sends the range flags of vacations list", async () => {
+	const [command] = await parse(["vacations", "list", "--from", "2026-01-01", "--to", "2026-12-31"]);
+	assert.deepStrictEqual(
+		{ key: command.key, flags: command.flags },
+		{ key: "vacations list", flags: { from: "2026-01-01", to: "2026-12-31" } },
 	);
 });
