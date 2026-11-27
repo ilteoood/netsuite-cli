@@ -67,16 +67,17 @@ The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, be
 
 ## Commands
 
-| Command            | Purpose                                       |
-| ------------------ | --------------------------------------------- |
-| `projects list`    | List the projects available for the timesheet |
-| `vacations list`   | List the upcoming vacations                   |
-| `vacations create` | Create a vacation request                     |
-| `timesheet list`   | List the entries of one week of the timesheet |
-| `timesheet fill`   | Fill a week of the timesheet with one project |
-| `timesheet add`    | Add one row to the timesheet of a date        |
-| `profile export`   | Export the login browser profile              |
-| `profile import`   | Import a browser profile archive              |
+| Command            | Purpose                                            |
+| ------------------ | -------------------------------------------------- |
+| `projects list`    | List the projects available for the timesheet      |
+| `tasks list`       | List the tasks one project offers to the timesheet |
+| `vacations list`   | List the upcoming vacations                        |
+| `vacations create` | Create a vacation request                          |
+| `timesheet list`   | List the entries of one week of the timesheet      |
+| `timesheet fill`   | Fill a week of the timesheet with one project      |
+| `timesheet add`    | Add one row to the timesheet of a date             |
+| `profile export`   | Export the login browser profile                   |
+| `profile import`   | Import a browser profile archive                   |
 
 ### `projects list`
 
@@ -95,6 +96,27 @@ Internal Tools                   1240
 ```bash
 netsuite-cli --json projects list
 ```
+
+### `tasks list`
+
+Lists the tasks the given project offers to the timesheet of the current week. `--project` is required and is matched case-insensitively by substring, exactly as `timesheet fill` and `timesheet add` match it, so the names and ids it prints are the ones those commands accept.
+
+```bash
+netsuite-cli tasks list --project acme
+```
+
+```text
+Task    Id
+Task 2  2002
+```
+
+```bash
+netsuite-cli --json tasks list --project acme
+```
+
+A task name is unique within its project, not across the account, so pass the project whose row you are filling: the same name can carry a different id under another project.
+
+A project that offers no task in the current week fails with a usage error naming the project and the week, instead of printing an empty table.
 
 ### `vacations list`
 

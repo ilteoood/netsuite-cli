@@ -7,7 +7,7 @@ import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { resolveActivity, resolveLeaveType } from "../src/labels.mjs";
 import { formatJson, formatTable } from "../src/output.mjs";
 import { exportProfile, importProfile } from "../src/profile.mjs";
-import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
+import { fetchProjectChoices, resolveChoice, resolveProjectTasks } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
 import { isNetsuiteLoginUrl, loginThroughBrowser, storedLoginUrl } from "../src/session.mjs";
 import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
@@ -16,6 +16,12 @@ const commands = {
 	"projects list": {
 		summary: "List the projects available for the timesheet",
 		flags: {},
+	},
+	"tasks list": {
+		summary: "List the tasks one project offers to the timesheet",
+		flags: {
+			project: { type: "string", value: "<name>", required: true, description: "Project name" },
+		},
 	},
 	"vacations list": {
 		summary: "List the upcoming vacations",
@@ -87,6 +93,7 @@ const commands = {
 
 const resourceSummaries = {
 	projects: "Projects available for the timesheet",
+	tasks: "Tasks available for the timesheet",
 	vacations: "Absences and leave types",
 	timesheet: "Timesheet entries",
 	profile: "Login browser profile",
@@ -201,6 +208,11 @@ const PROJECT_COLUMNS = [
 	{ header: "Id", value: (project) => project.id },
 ];
 
+const TASK_COLUMNS = [
+	{ header: "Task", value: (task) => task.name },
+	{ header: "Id", value: (task) => task.id },
+];
+
 const VACATION_COLUMNS = [
 	{ header: "Type", value: (vacation) => vacation.typeLabel },
 	{ header: "Start", value: (vacation) => vacation.startDate },
@@ -246,11 +258,8 @@ const isoDate = (flagName, value) => {
 };
 
 const resolveProjectAndTask = async (client, weekStart, flags) => {
-	const { employeeId, projects } = await fetchProjectChoices(client, weekStart);
-	const project = resolveChoice(projects, flags.project, "project");
-	const tasks = await fetchTasks(client, { weekStart, employeeId });
-	const projectTasks = tasks.filter((task) => task.projectId === project.id);
-	return { project, task: resolveChoice(projectTasks, flags.task, "task") };
+	const { project, tasks } = await resolveProjectTasks(client, weekStart, flags.project);
+	return { project, task: resolveChoice(tasks, flags.task, "task") };
 };
 
 const writeReport = (globals, report, { dryRun = false } = {}) =>
@@ -277,6 +286,10 @@ export const handlers = {
 	"projects list": async ({ client, globals }) => {
 		const { projects } = await fetchProjectChoices(client, weekStartOf());
 		write(globals, projects, PROJECT_COLUMNS);
+	},
+	"tasks list": async ({ client, globals, flags }) => {
+		const { tasks } = await resolveProjectTasks(client, weekStartOf(), flags.project);
+		write(globals, tasks, TASK_COLUMNS);
 	},
 	"vacations list": async ({ client, globals }) => {
 		write(globals, await listAbsences(client), VACATION_COLUMNS);

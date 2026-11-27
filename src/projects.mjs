@@ -109,3 +109,14 @@ export const resolveChoice = (choices, requested, what) => {
 		`No ${what} matches "${requested}".${closest.length ? ` Closest: ${closest.map(quoted).join(", ")}.` : ""}`,
 	);
 };
+
+export const resolveProjectTasks = async (client, weekStart, requested) => {
+	const { employeeId, projects } = await fetchProjectChoices(client, weekStart);
+	const project = resolveChoice(projects, requested, "project");
+	const tasks = await fetchTasks(client, { weekStart, employeeId });
+	const projectTasks = tasks.filter((task) => task.projectId === project.id);
+	if (projectTasks.length === 0) {
+		throw new UsageError(`The project "${project.name}" offers no tasks for the week starting ${weekStart}.`);
+	}
+	return { project, tasks: projectTasks };
+};

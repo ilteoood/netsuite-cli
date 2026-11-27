@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
-import { fetchProjectChoices, fetchTasks, resolveChoice } from "../src/projects.mjs";
+import { fetchProjectChoices, fetchTasks, resolveChoice, resolveProjectTasks } from "../src/projects.mjs";
 import { escapedPage, fixture } from "./support/netsuite-pages.mjs";
 
 const capturedProjects = fixture.projects.map(({ id, text }) => ({ id, name: text }));
@@ -10,7 +10,7 @@ const capturedTasks = fixture.tasks.flatMap(({ id: projectId, tasks }) =>
 );
 const capturedPage = escapedPage({ custpage_filtered_projects: fixture.projects });
 
-const clientWith = ({ page, rows = [{ id: fixture.timesheetId, employee: fixture.employeeId }] }) => {
+const clientWith = ({ page, tasks = null, rows = [{ id: fixture.timesheetId, employee: fixture.employeeId }] }) => {
 	const calls = { queries: [], paths: [] };
 	return {
 		account: "1234567",
@@ -21,7 +21,7 @@ const clientWith = ({ page, rows = [{ id: fixture.timesheetId, employee: fixture
 		},
 		text: async (path) => {
 			calls.paths.push(path);
-			return page;
+			return tasks !== null && path.includes("scriptlet.nl") ? JSON.stringify(tasks) : page;
 		},
 	};
 };
@@ -156,4 +156,29 @@ test("resolveChoice refuses a name that matches nothing and lists the closest la
 			return true;
 		},
 	);
+});
+
+test("resolveProjectTasks returns the tasks of the named project only", async () => {
+	const client = clientWith({ page: capturedPage, tasks: fixture.tasks });
+
+	const { project, tasks } = await resolveProjectTasks(client, fixture.week, "internal programme");
+
+	assert.deepStrictEqual(
+		{ project, tasks, requests: client.calls.paths.length },
+		{
+			project: { id: "1242", name: "Internal Programme 2.0" },
+			tasks: capturedTasks.filter((task) => task.projectId === "1242"),
+			requests: 2,
+		},
+	);
+});
+
+test("resolveProjectTasks reports a project of the week with no task", async () => {
+	const client = clientWith({ page: capturedPage, tasks: [] });
+
+	await assert.rejects(resolveProjectTasks(client, fixture.week, "acme platform"), (error) => {
+		assert.ok(error instanceof UsageError);
+		assert.match(error.message, /"Acme Platform" offers no tasks/);
+		return true;
+	});
 });

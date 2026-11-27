@@ -46,6 +46,15 @@ test("the parser reads the globals before the resource and the flags after the v
 	);
 });
 
+test("the parser sends the project of the tasks list", async () => {
+	const [command] = await parse(["tasks", "list", "--project", "Acme Platform"]);
+
+	assert.deepStrictEqual(
+		{ key: command.key, flags: command.flags },
+		{ key: "tasks list", flags: { project: "Acme Platform" } },
+	);
+});
+
 test("the parser defaults the globals and leaves the flags out", async () => {
 	const [command] = await parse(["projects", "list"]);
 
@@ -204,7 +213,8 @@ test("the binary names the available resources when the resource is unknown", ()
 		{ status: result.status, stderr: result.stderr },
 		{
 			status: 1,
-			stderr: 'netsuite-cli: unknown resource "time"; available: login, projects, vacations, timesheet, profile\n',
+			stderr:
+				'netsuite-cli: unknown resource "time"; available: login, projects, tasks, vacations, timesheet, profile\n',
 		},
 	);
 });
