@@ -38,6 +38,7 @@ test("loginForSessionCookie launches the browser headless unless a window is ask
 		"--no-default-browser-check",
 		"--disable-dev-shm-usage",
 		"--password-store=basic",
+		"--disable-features=EnableBoundSessionCredentials,EnableBoundSessionCredentialsContinuity,DeviceBoundSessions,DeviceBoundSessionCredentialsMac,DeviceBoundSessionsForSingleSignOn",
 	];
 
 	assert.deepStrictEqual(

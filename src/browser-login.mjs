@@ -8,6 +8,14 @@ const LOGIN_TIMEOUT_MS = 600_000;
 const HEADLESS_LOGIN_TIMEOUT_MS = 120_000;
 const POLL_INTERVAL_MS = 2000;
 
+const DISABLED_FEATURES = [
+	"EnableBoundSessionCredentials",
+	"EnableBoundSessionCredentialsContinuity",
+	"DeviceBoundSessions",
+	"DeviceBoundSessionCredentialsMac",
+	"DeviceBoundSessionsForSingleSignOn",
+];
+
 const sessionRank = (cookie, host) => {
 	const onAccountHost = cookie.domain === host || cookie.domain === `.${host}`;
 	if (onAccountHost && cookie.path === "/") return 0;
@@ -71,7 +79,13 @@ export const loginForSessionCookie = async (options = {}) => {
 		browser = await puppeteer.launch({
 			userDataDir: profileDirectory,
 			headless,
-			args: ["--no-first-run", "--no-default-browser-check", "--disable-dev-shm-usage", "--password-store=basic"],
+			args: [
+				"--no-first-run",
+				"--no-default-browser-check",
+				"--disable-dev-shm-usage",
+				"--password-store=basic",
+				`--disable-features=${DISABLED_FEATURES.join(",")}`,
+			],
 		});
 	} catch (error) {
 		throw new Error(
