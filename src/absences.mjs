@@ -1,16 +1,13 @@
-import { format } from "date-fns/format";
 import { NetsuiteError, UsageError } from "./errors.mjs";
-import { APPROVAL_STATUSES, LEAVE_TYPES, labelOf } from "./labels.mjs";
+import { APPROVAL_REQUESTED, APPROVAL_STATUSES, CANCELLED, LEAVE_TYPES, labelOf } from "./labels.mjs";
 import { weekStartOf } from "./schedule.mjs";
 
-const CANCELLED_STATUS = "5";
-const APPROVAL_REQUESTED = "2";
 const ABSENCE_RECORD = "customrecord_ct_hr_extendedtimeentry";
 
 const ABSENCE_COLUMNS =
-	"id, custrecord_ct_hr_ext_leaveabsencetype, TO_CHAR(custrecord_ct_hr_absencestartdate2, 'YYYY-MM-DD') AS startdate, TO_CHAR(custrecord_ct_hr_absenceenddate2, 'YYYY-MM-DD') AS enddate, custrecord_ct_hr_approvalstatus";
+	"id, custrecord_ct_hr_ext_leaveabsencetype, TO_CHAR(custrecord_ct_hr_absencestartdate2, 'YYYY-MM-DD') AS startdate, TO_CHAR(custrecord_ct_hr_absenceenddate2, 'YYYY-MM-DD') AS enddate, custrecord_ct_hr_approvalstatus, custrecord_ct_hr_ext_days_dur, custrecord_ct_hr_ext_hours_dur";
 
-export const ABSENCE_QUERY = `SELECT ${ABSENCE_COLUMNS}, custrecord_ct_hr_ext_days_dur FROM ${ABSENCE_RECORD}`;
+export const ABSENCE_QUERY = `SELECT ${ABSENCE_COLUMNS} FROM ${ABSENCE_RECORD}`;
 
 export const EMPLOYEE_ID_QUERY = (weekStart) =>
 	`SELECT employee FROM timesheet WHERE startdate = TO_DATE('${weekStart}', 'YYYY-MM-DD')`;
@@ -30,14 +27,18 @@ const toAbsence = (row) => {
 		statusId,
 		statusLabel: labelOf(APPROVAL_STATUSES, statusId),
 		days: row.custrecord_ct_hr_ext_days_dur,
+		hours: row.custrecord_ct_hr_ext_hours_dur,
 	};
 };
 
-export const listAbsences = async (client, { today = format(new Date(), "yyyy-MM-dd") } = {}) => {
+export const employeeAbsences = async (client, employeeId) =>
+	(await client.suiteql(EMPLOYEE_ABSENCES_QUERY(employeeId))).map(toAbsence);
+
+export const listAbsences = async (client, { from, to }) => {
 	const rows = await client.suiteql(ABSENCE_QUERY);
 	return rows
 		.map(toAbsence)
-		.filter((row) => row.endDate >= today && row.statusId !== CANCELLED_STATUS)
+		.filter((row) => row.endDate >= from && (to === null || row.startDate <= to) && row.statusId !== CANCELLED)
 		.sort((left, right) => left.startDate.localeCompare(right.startDate));
 };
 
@@ -60,9 +61,7 @@ export const createAbsence = async (
 		throw new UsageError(`The end date ${endDate} is before the start date ${startDate}.`);
 	}
 	const employeeId = await currentEmployeeId(client);
-	const existing = (await client.suiteql(EMPLOYEE_ABSENCES_QUERY(employeeId)))
-		.map(toAbsence)
-		.filter((row) => row.statusId !== CANCELLED_STATUS);
+	const existing = (await employeeAbsences(client, employeeId)).filter((row) => row.statusId !== CANCELLED);
 	const clash = existing.find((row) => row.startDate <= endDate && startDate <= row.endDate);
 	if (clash) {
 		throw new UsageError(

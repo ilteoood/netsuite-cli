@@ -3,10 +3,17 @@ import { UsageError } from "./errors.mjs";
 export const LEAVE_TYPES = {
 	84: "Annual Leave",
 	85: "Bank Holiday",
+	100: "Sick Leave",
+	101: "Special Leave",
 	102: "Training",
+	103: "Unpaid Leave",
+	183: "Open Source Leave",
 	242: "Event Leave",
+	247: "Study Leave",
 	252: "Other Leave",
 };
+
+export const ANNUAL_LEAVE_TYPE = "84";
 
 export const APPROVAL_STATUSES = {
 	1: "Approved",
@@ -16,6 +23,11 @@ export const APPROVAL_STATUSES = {
 	5: "Cancelled",
 	6: "Request Incomplete",
 };
+
+export const APPROVED = "1";
+export const APPROVAL_REQUESTED = "2";
+export const CANCEL_REQUESTED = "4";
+export const CANCELLED = "5";
 
 export const ACTIVITY_ITEMS = {
 	71: "Solution Delivery",

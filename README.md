@@ -67,18 +67,19 @@ The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, be
 
 ## Commands
 
-| Command            | Purpose                                            |
-| ------------------ | -------------------------------------------------- |
-| `projects list`    | List the projects available for the timesheet      |
-| `tasks list`       | List the tasks one project offers to the timesheet |
-| `vacations list`   | List the upcoming vacations                        |
-| `vacations create` | Create a vacation request                          |
-| `timesheet list`   | List the entries of one week of the timesheet      |
-| `timesheet fill`   | Fill a week of the timesheet with one project      |
-| `timesheet add`    | Add one row to the timesheet of a date             |
-| `timesheet submit` | Submit one week of the timesheet for approval      |
-| `profile export`   | Export the login browser profile                   |
-| `profile import`   | Import a browser profile archive                   |
+| Command             | Purpose                                            |
+| ------------------- | -------------------------------------------------- |
+| `projects list`     | List the projects available for the timesheet      |
+| `tasks list`        | List the tasks one project offers to the timesheet |
+| `vacations list`    | List the vacations of a date range                 |
+| `vacations balance` | Show the annual leave remaining in a year          |
+| `vacations create`  | Create a vacation request                          |
+| `timesheet list`    | List the entries of one week of the timesheet      |
+| `timesheet fill`    | Fill a week of the timesheet with one project      |
+| `timesheet add`     | Add one row to the timesheet of a date             |
+| `timesheet submit`  | Submit one week of the timesheet for approval      |
+| `profile export`    | Export the login browser profile                   |
+| `profile import`    | Import a browser profile archive                   |
 
 ### `projects list`
 
@@ -121,7 +122,7 @@ A project that offers no task in the current week fails with a usage error namin
 
 ### `vacations list`
 
-Lists the vacations visible to the signed-in user whose end date is today or later, sorted by start date. Cancelled requests are omitted.
+Lists the vacations visible to the signed-in user that overlap a date range, sorted by start date. Cancelled requests are omitted. By default the range starts today and has no end, so the list shows what is upcoming. `--from` and `--to` set the first and last day. An absence that crosses a bound, such as one from 26 December to 1 January, is listed in full.
 
 ```bash
 netsuite-cli vacations list
@@ -134,6 +135,7 @@ Annual Leave    2026-12-28  2026-12-31  Approved  4     80002
 ```
 
 ```bash
+netsuite-cli vacations list --from 2026-06-01 --to 2026-08-31
 netsuite-cli --json vacations list
 ```
 
@@ -147,14 +149,42 @@ netsuite-cli --json vacations list
 		"endDate": "2026-12-31",
 		"statusId": "1",
 		"statusLabel": "Approved",
-		"days": "4"
+		"days": "4",
+		"hours": "32"
 	}
 ]
 ```
 
+### `vacations balance`
+
+Shows the annual leave of one leave year for the signed-in employee, counted the way the NetSuite time-off dashboard counts it so the two agree. `--year` defaults to the current year.
+
+- **Entitlement** is the Total Entitlement NetSuite stores for the year: contractual days plus carry-forward.
+- **Booked** is approved Annual Leave, including requests awaiting cancellation. **Pending** is Annual Leave awaiting approval. Each absence counts as its recorded hours divided by 8, in every leave year it overlaps, so a closure from 26 December to 1 January counts in both years.
+- **Remaining** is the entitlement minus booked and pending.
+- **Not counted** lists booked or pending absences with no recorded hours. NetSuite counts them as zero, so report them to HR.
+- Adjustments in days that are valid during the year, such as `Rol (IT)`, are separate balances and are not part of the remaining days. Adjustments in hours are left out.
+
+```bash
+netsuite-cli vacations balance --year 2026
+```
+
+```text
+Annual leave 2026-01-01 → 2026-12-31
+Item             Days  Note
+Contractual      24
+Carried forward  4
+Entitlement      28
+Booked           27    approved annual leave
+Pending          0     awaiting approval
+Remaining        1
+Not counted      4     2026-12-28 → 2026-12-31 has no recorded hours (id 80004)
+Rol (IT)         2.6   separate balance 2026-06-26 → 2027-06-30
+```
+
 ### `vacations create`
 
-Files a real approval request for a date range. `--start` and `--type` are required; `--end` defaults to `--start`. The leave type is matched case-insensitively by substring against `Annual Leave`, `Bank Holiday`, `Training`, `Event Leave` and `Other Leave`. The reference defaults to the type and the dates.
+Files a real approval request for a date range. `--start` and `--type` are required; `--end` defaults to `--start`. The leave type is matched case-insensitively by substring against `Annual Leave`, `Bank Holiday`, `Sick Leave`, `Special Leave`, `Training`, `Unpaid Leave`, `Open Source Leave`, `Event Leave`, `Study Leave` and `Other Leave`. The reference defaults to the type and the dates.
 
 ```bash
 netsuite-cli vacations create --start 2027-01-11 --end 2027-01-15 --type "Annual Leave" --memo "Family holiday"

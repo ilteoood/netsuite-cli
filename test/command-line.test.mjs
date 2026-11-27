@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { absenceRangeOf, balanceLines, buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -498,5 +498,85 @@ test("the parser sends the week of timesheet submit", async () => {
 	assert.deepStrictEqual(
 		{ key: command.key, flags: command.flags },
 		{ key: "timesheet submit", flags: { week: "2026-11-23" } },
+	);
+});
+
+test("absenceRangeOf starts the range today and leaves it open unless told otherwise", () => {
+	const today = "2026-11-27";
+	assert.deepStrictEqual(
+		[
+			absenceRangeOf({ from: "2026-03-01", to: "2026-03-31" }, today),
+			absenceRangeOf({ to: "2027-01-31" }, today),
+			absenceRangeOf({ from: "2026-01-01" }, today),
+			absenceRangeOf({}, today),
+		],
+		[
+			{ from: "2026-03-01", to: "2026-03-31" },
+			{ from: "2026-11-27", to: "2027-01-31" },
+			{ from: "2026-01-01", to: null },
+			{ from: "2026-11-27", to: null },
+		],
+	);
+});
+
+test("absenceRangeOf refuses a malformed date and an inverted range", () => {
+	for (const [flags, fragment] of [
+		[{ from: "2026-03-01", to: "2026-02-01" }, "is before --from 2026-03-01"],
+		[{ to: "2026-06-30" }, "is before today, where the range starts by default; add --from"],
+		[{ from: "1/3/2026" }, "--from takes a date"],
+	]) {
+		assert.throws(
+			() => absenceRangeOf(flags, "2026-11-27"),
+			(error) => error instanceof UsageError && error.message.includes(fragment),
+		);
+	}
+});
+
+test("the parser sends the range flags of vacations list", async () => {
+	const [command] = await parse(["vacations", "list", "--from", "2026-01-01", "--to", "2026-12-31"]);
+	assert.deepStrictEqual(
+		{ key: command.key, flags: command.flags },
+		{ key: "vacations list", flags: { from: "2026-01-01", to: "2026-12-31" } },
+	);
+});
+
+test("vacations balance refuses a year that is not YYYY before reading NetSuite", async () => {
+	const queries = [];
+	const client = { suiteql: async (query) => queries.push(query) && [] };
+
+	await assert.rejects(
+		handlers["vacations balance"]({ client, globals: {}, flags: { year: "26" } }),
+		(error) => error instanceof UsageError && error.message.includes('--year takes a year as YYYY, not "26"'),
+	);
+	assert.deepStrictEqual(queries, []);
+});
+
+test("balanceLines lists the uncounted absences and the adjustments after the remaining days", () => {
+	const lines = balanceLines({
+		contractual: 24,
+		carriedForward: 4,
+		entitlement: 28,
+		adjustments: [{ type: "Rol (IT)", days: 2.6, effectiveFrom: "2026-06-26", effectiveUntil: null }],
+		booked: 28,
+		pending: 0,
+		remaining: 0,
+		unrecorded: [{ id: "80004", startDate: "2026-12-28", endDate: "2026-12-31", days: 4 }],
+	});
+	assert.deepStrictEqual(
+		lines.map((line) => [line.item, String(line.days)]),
+		[
+			["Contractual", "24"],
+			["Carried forward", "4"],
+			["Entitlement", "28"],
+			["Booked", "28"],
+			["Pending", "0"],
+			["Remaining", "0"],
+			["Not counted", "4"],
+			["Rol (IT)", "2.6"],
+		],
+	);
+	assert.deepStrictEqual(
+		[lines[6].note, lines[7].note],
+		["2026-12-28 → 2026-12-31 has no recorded hours (id 80004)", "separate balance 2026-06-26 → open"],
 	);
 });
