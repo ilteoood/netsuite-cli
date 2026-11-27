@@ -10,7 +10,7 @@ import { exportProfile, importProfile } from "../src/profile.mjs";
 import { fetchProjectChoices, resolveChoice, resolveProjectTasks } from "../src/projects.mjs";
 import { formatHours, weekDates, weekStartOf } from "../src/schedule.mjs";
 import { isNetsuiteLoginUrl, loginThroughBrowser, storedLoginUrl } from "../src/session.mjs";
-import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
+import { addTimeEntry, fillTimesheet, listTimesheet, submitTimesheet } from "../src/timesheet.mjs";
 
 const commands = {
 	"projects list": {
@@ -75,6 +75,12 @@ const commands = {
 				description: "Activity label or id (default: Solution Delivery)",
 			},
 			memo: { type: "string", value: "<text>", description: "Memo (default: the task name)" },
+		},
+	},
+	"timesheet submit": {
+		summary: "Submit one week of the timesheet for approval",
+		flags: {
+			week: { type: "string", value: "<date>", description: "Monday of the week (default: current week)" },
 		},
 	},
 	"profile export": {
@@ -328,6 +334,12 @@ export const handlers = {
 			memo: flags.memo ?? task.name,
 		});
 		writeReport(globals, report);
+	},
+	"timesheet submit": async ({ client, globals, flags }) => {
+		const weekStart = isoDate("week", flags.week) ?? weekStartOf();
+		const report = await submitTimesheet(client, weekStart);
+		const line = weekLine(report);
+		emit(globals, report, () => (report.alreadySubmitted ? `Already submitted: ${line}` : `Submitted ${line}`));
 	},
 	"vacations create": async ({ client, globals, flags }) => {
 		const type = resolveLeaveType(flags.type);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
-import { addTimeEntry, fillTimesheet, listTimesheet } from "../src/timesheet.mjs";
+import { addTimeEntry, fillTimesheet, listTimesheet, submitTimesheet } from "../src/timesheet.mjs";
 import { escapedPage, fixture } from "./support/netsuite-pages.mjs";
 
 const weekStart = "2026-11-16";
@@ -24,6 +24,7 @@ const projectsPage = () => escapedPage({ custpage_filtered_projects: fixture.pro
 
 const clientWith = ({
 	timesheet = { id: "900", employee: "4242" },
+	timesheets = timesheet ? [timesheet] : [],
 	entries = [],
 	submitResult = { result: { success: true } },
 } = {}) => {
@@ -33,7 +34,7 @@ const clientWith = ({
 		calls,
 		suiteql: async (query) => {
 			calls.push({ query });
-			return query.includes("FROM timesheet") ? (timesheet ? [timesheet] : []) : entries;
+			return query.includes("FROM timesheet") ? timesheets : entries;
 		},
 		text: async (path) => {
 			return path.includes("weeklytimebill") ? projectsPage() : JSON.stringify(fixture.tasks);
@@ -275,9 +276,9 @@ test("fillTimesheet refuses to submit a week that holds an entry without a memo"
 	await assert.rejects(
 		fillTimesheet(client, fillOptions({ days: ["2026-11-16"], memo: "", submit: true })),
 		(error) => {
-			assert.ok(error instanceof NetsuiteError);
+			assert.ok(error instanceof UsageError);
 			assert.match(error.message, /memo on every time entry before submitting/);
-			assert.match(error.message, /2026-11-16/);
+			assert.match(error.message, /Missing: 2026-11-16 Acme Platform\./);
 			return true;
 		},
 	);
@@ -552,4 +553,77 @@ test("listTimesheet reads the timesheet record once", async () => {
 	await listTimesheet(client, weekStart);
 
 	assert.equal(client.calls.filter(({ query }) => query?.includes("FROM timesheet")).length, 1);
+});
+
+test("submitTimesheet submits a week that holds entries with memos", async () => {
+	const client = clientWith({ entries: [entryRow(), entryRow({ id: "502", entrydate: "2026-11-17" })] });
+
+	const report = await submitTimesheet(client, weekStart);
+
+	assert.deepStrictEqual(
+		{ report, writes: writeCalls(client) },
+		{
+			report: { weekStart, timesheetId: "900", totalMinutes: 900, alreadySubmitted: false },
+			writes: [{ path: "/services/rest/record/v1/timesheet/900/@submit", method: "POST", body: {} }],
+		},
+	);
+});
+
+test("submitTimesheet reports a week that is already submitted without writing", async () => {
+	const client = clientWith({
+		timesheet: { id: "900", employee: "4242", custrecord_timesheetsubmitted: "T" },
+		entries: [entryRow()],
+	});
+
+	const report = await submitTimesheet(client, weekStart);
+
+	assert.deepStrictEqual(
+		{ alreadySubmitted: report.alreadySubmitted, writes: writes(client) },
+		{ alreadySubmitted: true, writes: [] },
+	);
+});
+
+test("submitTimesheet refuses an empty week", async () => {
+	const client = clientWith();
+
+	await assert.rejects(
+		submitTimesheet(client, weekStart),
+		(error) => error instanceof UsageError && /nothing to submit/.test(error.message),
+	);
+	assert.deepStrictEqual(writes(client), []);
+});
+
+test("submitTimesheet refuses a week that holds an entry without a memo", async () => {
+	const client = clientWith({ entries: [entryRow(), entryRow({ id: "502", entrydate: "2026-11-17", memo: "" })] });
+
+	await assert.rejects(
+		submitTimesheet(client, weekStart),
+		(error) => error instanceof UsageError && /Missing: 2026-11-17 project 1234\./.test(error.message),
+	);
+	assert.deepStrictEqual(writes(client), []);
+});
+
+test("submitTimesheet refuses a week where several timesheets are visible", async () => {
+	const client = clientWith({
+		timesheets: [
+			{ id: "900", employee: "4242" },
+			{ id: "901", employee: "4243" },
+		],
+		entries: [entryRow()],
+	});
+
+	await assert.rejects(
+		submitTimesheet(client, weekStart),
+		(error) => error instanceof UsageError && /several timesheets \(900, 901\)/.test(error.message),
+	);
+	assert.deepStrictEqual(writes(client), []);
+});
+
+test("submitTimesheet refuses when NetSuite answers success false", async () => {
+	const client = clientWith({ entries: [entryRow()], submitResult: { result: { success: false } } });
+
+	await assert.rejects(
+		submitTimesheet(client, weekStart),
+		(error) => error instanceof NetsuiteError && /refused to submit timesheet 900/.test(error.message),
+	);
 });
