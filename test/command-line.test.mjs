@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { absenceRangeOf, buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
+import { absenceRangeOf, balanceLines, buildProgram, errorReport, handlers, weekDaysOf } from "../bin/netsuite-cli.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 
 const binary = fileURLToPath(new URL("../bin/netsuite-cli.mjs", import.meta.url));
@@ -537,5 +537,46 @@ test("the parser sends the range flags of vacations list", async () => {
 	assert.deepStrictEqual(
 		{ key: command.key, flags: command.flags },
 		{ key: "vacations list", flags: { from: "2026-01-01", to: "2026-12-31" } },
+	);
+});
+
+test("vacations balance refuses a year that is not YYYY before reading NetSuite", async () => {
+	const queries = [];
+	const client = { suiteql: async (query) => queries.push(query) && [] };
+
+	await assert.rejects(
+		handlers["vacations balance"]({ client, globals: {}, flags: { year: "26" } }),
+		(error) => error instanceof UsageError && error.message.includes('--year takes a year as YYYY, not "26"'),
+	);
+	assert.deepStrictEqual(queries, []);
+});
+
+test("balanceLines lists the uncounted absences and the adjustments after the remaining days", () => {
+	const lines = balanceLines({
+		contractual: 24,
+		carriedForward: 4,
+		entitlement: 28,
+		adjustments: [{ type: "Rol (IT)", days: 2.6, effectiveFrom: "2026-06-26", effectiveUntil: null }],
+		booked: 28,
+		pending: 0,
+		remaining: 0,
+		unrecorded: [{ id: "80004", startDate: "2026-12-28", endDate: "2026-12-31", days: 4 }],
+	});
+	assert.deepStrictEqual(
+		lines.map((line) => [line.item, String(line.days)]),
+		[
+			["Contractual", "24"],
+			["Carried forward", "4"],
+			["Entitlement", "28"],
+			["Booked", "28"],
+			["Pending", "0"],
+			["Remaining", "0"],
+			["Not counted", "4"],
+			["Rol (IT)", "2.6"],
+		],
+	);
+	assert.deepStrictEqual(
+		[lines[6].note, lines[7].note],
+		["2026-12-28 → 2026-12-31 has no recorded hours (id 80004)", "separate balance 2026-06-26 → open"],
 	);
 });

@@ -13,6 +13,7 @@ const absenceRow = (overrides = {}) => ({
 	enddate: "2026-12-31",
 	custrecord_ct_hr_approvalstatus: "2",
 	custrecord_ct_hr_ext_days_dur: 4,
+	custrecord_ct_hr_ext_hours_dur: 32,
 	...overrides,
 });
 
@@ -39,6 +40,7 @@ test("listAbsences maps a SuiteQL row to the table shape", async () => {
 			statusId: "2",
 			statusLabel: "Approval Requested",
 			days: 4,
+			hours: 32,
 		},
 	]);
 });
@@ -105,13 +107,14 @@ test("listAbsences reads the entries with one SuiteQL query", async () => {
 				"custrecord_ct_hr_absenceenddate2",
 				"custrecord_ct_hr_approvalstatus",
 				"custrecord_ct_hr_ext_days_dur",
+				"custrecord_ct_hr_ext_hours_dur",
 			].map((field) => new RegExp(field).test(client.queries[0])),
 			hasNoIdFilter: !/WHERE id/.test(client.queries[0]),
 		},
 		{
 			queries: [ABSENCE_QUERY],
 			readsFromTheTimeEntryTable: true,
-			selectsEveryField: [true, true, true, true, true],
+			selectsEveryField: [true, true, true, true, true, true],
 			hasNoIdFilter: true,
 		},
 	);

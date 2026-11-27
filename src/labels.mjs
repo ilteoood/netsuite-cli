@@ -13,6 +13,8 @@ export const LEAVE_TYPES = {
 	252: "Other Leave",
 };
 
+export const ANNUAL_LEAVE_TYPE = "84";
+
 export const APPROVAL_STATUSES = {
 	1: "Approved",
 	2: "Approval Requested",
@@ -21,6 +23,11 @@ export const APPROVAL_STATUSES = {
 	5: "Cancelled",
 	6: "Request Incomplete",
 };
+
+export const APPROVED = "1";
+export const APPROVAL_REQUESTED = "2";
+export const CANCEL_REQUESTED = "4";
+export const CANCELLED = "5";
 
 export const ACTIVITY_ITEMS = {
 	71: "Solution Delivery",

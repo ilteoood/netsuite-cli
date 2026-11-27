@@ -6,6 +6,7 @@ import { createAbsence, listAbsences } from "../src/absences.mjs";
 import { clearCache, SESSION_CACHE_PATH } from "../src/cache.mjs";
 import { NetsuiteError, UsageError } from "../src/errors.mjs";
 import { resolveActivity, resolveLeaveType } from "../src/labels.mjs";
+import { fetchLeaveBalance } from "../src/leave-balance.mjs";
 import { formatJson, formatTable } from "../src/output.mjs";
 import { exportProfile, importProfile } from "../src/profile.mjs";
 import { fetchProjectChoices, resolveChoice, resolveProjectTasks } from "../src/projects.mjs";
@@ -29,6 +30,12 @@ const commands = {
 		flags: {
 			from: { type: "string", value: "<date>", description: "First day of the range, YYYY-MM-DD (default: today)" },
 			to: { type: "string", value: "<date>", description: "Last day of the range, YYYY-MM-DD (default: none)" },
+		},
+	},
+	"vacations balance": {
+		summary: "Show the annual leave allowance, the days booked and the days remaining",
+		flags: {
+			year: { type: "string", value: "<year>", description: "Leave year, YYYY (default: current year)" },
 		},
 	},
 	"vacations create": {
@@ -267,6 +274,39 @@ const isoDate = (flagName, value) => {
 	throw new UsageError(`--${flagName} takes a date as YYYY-MM-DD, not "${value}"`);
 };
 
+const isoYear = (value) => {
+	if (value === undefined || /^\d{4}$/.test(value)) return value;
+	throw new UsageError(`--year takes a year as YYYY, not "${value}"`);
+};
+
+const BALANCE_FIGURES = ["contractual", "carriedForward", "entitlement", "booked", "pending", "remaining"];
+const BALANCE_NOTES = { booked: "approved annual leave", pending: "awaiting approval" };
+
+const itemOf = (key) => {
+	const words = key.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`);
+	return `${words[0].toUpperCase()}${words.slice(1)}`;
+};
+
+export const balanceLines = (balance) => [
+	...BALANCE_FIGURES.map((key) => ({ item: itemOf(key), days: balance[key], note: BALANCE_NOTES[key] })),
+	...balance.unrecorded.map((absence) => ({
+		item: "Not counted",
+		days: absence.days,
+		note: `${absence.startDate} → ${absence.endDate} has no recorded hours (id ${absence.id})`,
+	})),
+	...balance.adjustments.map((adjustment) => ({
+		item: adjustment.type,
+		days: adjustment.days,
+		note: `separate balance ${adjustment.effectiveFrom} → ${adjustment.effectiveUntil ?? "open"}`,
+	})),
+];
+
+const BALANCE_COLUMNS = [
+	{ header: "Item", value: (line) => line.item },
+	{ header: "Days", value: (line) => line.days },
+	{ header: "Note", value: (line) => line.note },
+];
+
 export const absenceRangeOf = ({ from, to }, today = format(new Date(), "yyyy-MM-dd")) => {
 	const range = { from: isoDate("from", from) ?? today, to: isoDate("to", to) ?? null };
 	if (range.to !== null && range.to < range.from) {
@@ -315,6 +355,16 @@ export const handlers = {
 	},
 	"vacations list": async ({ client, globals, flags }) => {
 		write(globals, await listAbsences(client, absenceRangeOf(flags)), VACATION_COLUMNS);
+	},
+	"vacations balance": async ({ client, globals, flags }) => {
+		const year = isoYear(flags.year) ?? String(new Date().getFullYear());
+		const balance = await fetchLeaveBalance(client, { year });
+		emit(
+			globals,
+			balance,
+			(balance) =>
+				`Annual leave ${balance.periodStart} → ${balance.periodEnd}\n${formatTable(balanceLines(balance), BALANCE_COLUMNS)}`,
+		);
 	},
 	"timesheet list": async ({ client, globals, flags }) => {
 		const weekStart = isoDate("week", flags.week) ?? weekStartOf();
