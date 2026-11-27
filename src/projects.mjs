@@ -56,14 +56,20 @@ const closestChoices = (choices, query) =>
 		.map(({ project }) => project);
 
 export const readWeekHeader = async (client, weekStart) => {
-	const [timesheet] = await client.suiteql(
+	const timesheets = await client.suiteql(
 		`SELECT id, employee, custrecord_timesheetsubmitted FROM timesheet WHERE startdate = TO_DATE('${weekStart}', 'YYYY-MM-DD')`,
 	);
-	if (!timesheet) {
+	if (timesheets.length === 0) {
 		throw new UsageError(
 			`No timesheet exists for the week starting ${weekStart}. NetSuite pre-creates every week, so ${weekStart} is probably not a Monday.`,
 		);
 	}
+	if (timesheets.length > 1) {
+		throw new UsageError(
+			`The week starting ${weekStart} has several timesheets (${timesheets.map((row) => row.id).join(", ")}), so the CLI cannot tell which one is yours.`,
+		);
+	}
+	const [timesheet] = timesheets;
 	return {
 		timesheetId: String(timesheet.id),
 		employeeId: String(timesheet.employee),

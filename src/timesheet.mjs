@@ -59,8 +59,8 @@ const assertForced = ({ replace, remove }, force) => {
 const assertEveryEntryHasMemo = (entries) => {
 	const withoutMemo = entries.filter((entry) => !entry.memo);
 	if (withoutMemo.length > 0) {
-		throw new NetsuiteError(
-			`NetSuite needs a memo on every time entry before submitting. Missing: ${withoutMemo.map((entry) => entry.date).join(", ")}.`,
+		throw new UsageError(
+			`NetSuite needs a memo on every time entry before submitting. Missing: ${withoutMemo.map((entry) => `${entry.date} ${entry.label ?? `project ${entry.customer}`}`).join(", ")}.`,
 		);
 	}
 };
@@ -216,4 +216,16 @@ export const addTimeEntry = async (client, options) => {
 	assertNoApprovedEntries(effectivePlan);
 	await writePlan(client, { timesheetId, employeeId, plan: effectivePlan });
 	return report;
+};
+
+export const submitTimesheet = async (client, weekStart) => {
+	const { timesheetId, alreadySubmitted, existingEntries } = await readWeek(client, weekStart);
+	const report = { weekStart, timesheetId, totalMinutes: totalMinutesOf(existingEntries) };
+	if (alreadySubmitted) return { ...report, alreadySubmitted: true };
+	if (existingEntries.length === 0) {
+		throw new UsageError(`The week of ${weekStart} has no time entries, so there is nothing to submit.`);
+	}
+	assertEveryEntryHasMemo(existingEntries);
+	await submitWeek(client, timesheetId);
+	return { ...report, alreadySubmitted: false };
 };

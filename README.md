@@ -76,6 +76,7 @@ The next sign-in needs `netsuite-cli login <url>` again from a fresh profile, be
 | `timesheet list`   | List the entries of one week of the timesheet      |
 | `timesheet fill`   | Fill a week of the timesheet with one project      |
 | `timesheet add`    | Add one row to the timesheet of a date             |
+| `timesheet submit` | Submit one week of the timesheet for approval      |
 | `profile export`   | Export the login browser profile                   |
 | `profile import`   | Import a browser profile archive                   |
 
@@ -242,6 +243,18 @@ Wrote 1 created, 0 replaced, 0 removed, 42:00 in the week of 2026-11-09
 ```
 
 If a row for the same date, project and task already exists with different hours or memo, it is replaced. Other rows are left alone.
+
+### `timesheet submit`
+
+Submits one week of the timesheet for approval, whatever wrote its entries. `--week` takes the Monday of the week and defaults to the current week. It refuses a week with no entries and a week with an entry that has no memo, because NetSuite rejects those. A week that is already submitted is reported and left alone, so running the command twice is safe.
+
+```bash
+netsuite-cli timesheet submit --week 2026-11-23
+```
+
+```text
+Submitted 40:00 in the week of 2026-11-23
+```
 
 ### `profile export`
 

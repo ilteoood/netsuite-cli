@@ -492,3 +492,11 @@ test("the binary runs when it is started through a symlink, as npm and npx do", 
 		{ status: 0, printsTheUsage: true },
 	);
 });
+
+test("the parser sends the week of timesheet submit", async () => {
+	const [command] = await parse(["timesheet", "submit", "--week", "2026-11-23"]);
+	assert.deepStrictEqual(
+		{ key: command.key, flags: command.flags },
+		{ key: "timesheet submit", flags: { week: "2026-11-23" } },
+	);
+});
